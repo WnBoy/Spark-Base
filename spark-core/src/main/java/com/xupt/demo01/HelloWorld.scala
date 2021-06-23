@@ -5,6 +5,10 @@ package com.xupt.demo01
   */
 object HelloWorld {
   def main(args: Array[String]): Unit = {
-    print("Hello world.")
+    println("Hello world.")
+    val list: List[Int] = List(1, 2, 3)
+    val logic: (Int) => Int = _ * 2
+    list.map(logic).foreach(println)
+
   }
 }
