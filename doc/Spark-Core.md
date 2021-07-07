@@ -186,6 +186,194 @@ mapPartitions : 可以以分区为单位进行数据转换操作
 
 将同一个分区的数据直接转换为相同类型的内存数组进行处理，分区不变
 
+### 3.6 groupBy
+
+groupBy会将数据源中的每一个数据进行分组判断，根据返回的分组key进行分组
+相同的key值的数据会放置在一个组中
+
+将数据根据指定的规则进行分组, 分区默认不变，但是数据会被打乱重新组合，我们将这样的操作称之为shuffle。极限情况下，数据可能被分在同一个分区中
+一个组的数据在一个分区中，但是并不是说一个分区中只有一个组
+
+### 3.7 filter
+
+将数据根据指定的规则进行筛选过滤，符合规则的数据保留，不符合规则的数据丢弃。
+当数据进行筛选过滤后，分区不变，但是分区内的数据可能不均衡，生产环境下，可能会出现数据倾斜。
+
+### 3.8 sample
+
+根据指定的规则从数据集中抽取数据，可以用于 **处理数据倾斜**
+
+ ### 3.9 distinct
+
+将数据集中重复的数据去重
+
+### 3.10 coalesce
+
+**根据数据量缩减分区**，用于大数据集过滤后，提高小数据集的执行效率。
+当spark程序中，存在过多的小任务的时候，可以通过coalesce方法，收缩合并分区，减少分区的个数，减小任务调度成本。
+
+- coalesce方法默认情况下不会将分区的数据打乱重新组合
+- 这种情况下的缩减分区可能会导致数据不均衡，出现数据倾斜
+- 如果想要让数据均衡，可以进行**shuffle处理**
+
+coalesce算子可以扩大分区的，但是如果不进行shuffle操作，是没有意义，不起作用。
+
+所以如果想要实现扩大分区的效果，需要使用shuffle操作。
+
+spark提供了一个简化的操作：
+
+- 缩减分区：coalesce，如果想要数据均衡，可以采用shuffle
+- 扩大分区：repartition, 底层代码调用的就是coalesce，而且肯定采用shuffle
+
+### 3.11 repartition
+
+该操作内部其实执行的是coalesce操作，参数shuffle的默认值为true。
+
+无论是将分区数多的RDD转换为分区数少的RDD，还是将分区数少的RDD转换为分区数多的RDD，repartition操作都可以完成，因为无论如何都会经shuffle过程。
+
+### 3.12 sortBy
+
+ sortBy方法可以根据指定的规则对数据源中的数据进行排序，默认为升序，第二个参数可以改变排序的方式。
+ sortBy默认情况下，不会改变分区。但是中间存在shuffle操作。
+
+### 3.13 双Value类型
+
+- intersection：交集
+- union：并集
+- subtract：差集
+- zip：拉链
+
+交集，并集和差集要求两个数据源数据类型保持一致。
+拉链操作两个数据源的类型可以不一致。
+
+拉链
+
+- 两个数据源要求分区数量要保持一致
+
+  - ```
+    Can't zip RDDs with unequal numbers of partitions: List(2, 4)
+    ```
+
+- 两个数据源要求分区中数据数量保持一致
+
+  - ```
+    Can only zip RDDs with same number of elements in each partition
+    ```
+
+### 3.14 key-value 类型
+
+#### 1 partitionBy
+
+将数据按照指定Partitioner重新进行分区。Spark默认的分区器是HashPartitioner
+
+- 思考一个问题：如果重分区的分区器和当前RDD的分区器一样怎么办？
+  - 那就无法实现分区
+- 思考一个问题：Spark还有其他分区器吗？
+  - 一共有三个分区器
+    - HashPartitioner：默认
+    - RangePartitioner：一般用于排序
+    - PythonPartitioner：privite的，无法从外部使用
+- 思考一个问题：如果想按照自己的方法进行数据分区怎么办？
+- 思考一个问题：哪那么多问题？
+
+#### 2 reduceByKey
+
+ 可以将数据按照相同的Key对Value进行聚合
+
+#### 3 groupByKey
+
+将数据源的数据根据key对value进行分组
+
+- 将数据源中的数据，相同key的数据分在一个组中，形成一个对偶元组
+- 元组中的第一个元素就是key
+- 元组中的第二个元素就是相同key的value的集合
+
+**思考一个问题：reduceByKey和groupByKey的区别？**
+
+scala语言中一般的聚合操作都是两两聚合，spark基于scala开发的，所以它的聚合也是两两聚合。
+
+spark中，shullfe操作必须落盘处理，不能中在内存中数据等待，否则会出现内存溢出，shullfe操作的性能非常低。
+
+- **从shuffle的角度**：reduceByKey和groupByKey都存在shuffle的操作，但是reduceByKey可以在shuffle前对分区内相同key的数据进行预聚合（combine）功能，这样会减少落盘的数据量，而groupByKey只是进行分组，不存在数据量减少的问题，reduceByKey性能比较高。
+- **从功能的角度**：reduceByKey其实包含分组和聚合的功能。GroupByKey只能分组，不能聚合，所以在分组聚合的场合下，推荐使用reduceByKey，如果仅仅是分组而不需要聚合。那么还是只能使用groupByKey
+
+**reduceByKey**
+
+- 支持分区内聚合功能，可以有效的减少sheffle时落盘的数量，提升性能。
+- **分区内和分区间计算规则是 相同的**
+
+#### 4 aggregateByKey
+
+将数据根据**不同的规则**进行分区内计算和分区间计算
+
+aggregateByKey存在函数柯里化，有两个参数列表
+
+- 第一个参数列表,需要传递一个参数，表示为初始值
+  - 主要用于当碰见第一个key的时候，和value进行分区内计算
+
+- 第二个参数列表需要传递2个参数
+  - 第一个参数表示分区内计算规则
+  - 第二个参数表示分区间计算规则
+
+aggregateByKey最终的返回数据结果应该和初始值的类型保持一致
+
+小练习：获取相同key的数据的平均值 => (a, 3),(b, 4)
+
+```scala
+object Spark14_RDD_Operator_Transform_aggregateByKey_Test {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    /**
+      * 获取相同key的数据的平均值 => (a, 3),(b, 4)
+      */
+    val rdd = sc.makeRDD(List(
+      ("a", 1), ("a", 2), ("b", 3),
+      ("b", 4), ("b", 5), ("a", 6)
+    ), 2)
+
+    // aggregateByKey最终的返回数据结果应该和初始值的类型保持一致
+
+    // 获取相同key的数据的平均值 => (a, 3),(b, 4)
+
+    //(0,0)第一个0表示数量，第二个0表示次数
+    val aggRdd: RDD[(String, (Int, Int))] = rdd.aggregateByKey((0, 0))(
+      (t, v) => (t._1 + v, t._2 + 1), (t1, t2) => (t1._1 + t2._1, t1._2 + t2._2)
+    )
+    val resRdd: RDD[(String, Int)] = aggRdd.mapValues {
+      case (v1, v2) => {
+        v1 / v2
+      }
+    }
+
+    resRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+#### 5 foldByKey
+
+当分区内计算规则和分区间计算规则相同时，aggregateByKey就可以简化为foldByKey
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

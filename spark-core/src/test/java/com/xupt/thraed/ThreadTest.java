@@ -1,5 +1,6 @@
 package com.xupt.thraed;
 
+import java.io.File;
 import java.util.UUID;
 import java.util.concurrent.*;
 
@@ -18,7 +19,6 @@ public class ThreadTest {
             throw new RuntimeException("报错了。。。。");
 //            return name;
         }, executorService);
-
         System.out.println(future.get());
     }
 
