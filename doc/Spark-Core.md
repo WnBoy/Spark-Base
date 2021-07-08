@@ -280,6 +280,30 @@ spark提供了一个简化的操作：
 
  可以将数据按照相同的Key对Value进行聚合
 
+```scala
+object Spark14_RDD_Operator_Transform_reduceByKey {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+        val sc = new SparkContext(sparkConf)
+
+        val rdd = sc.makeRDD(List(("a", 1), ("a", 2), ("a", 3),("b",3)),2)
+        // reduceByKey : 相同的key的数据进行value数据的聚合操作
+        // scala语言中一般的聚合操作都是两两聚合，spark基于scala开发的，所以它的聚合也是两两聚合
+        // 【1，2，3】
+        // 【3，3】
+        // 【6】
+        // reduceByKey中如果key的数据只有一个，是不会参与运算的。
+        val resRdd: RDD[(String, Int)] = rdd.reduceByKey(_+_)
+
+        resRdd.collect().foreach(println)
+
+        sc.stop()
+    }
+}
+```
+
 #### 3 groupByKey
 
 将数据源的数据根据key对value进行分组
@@ -360,17 +384,179 @@ object Spark14_RDD_Operator_Transform_aggregateByKey_Test {
 
 当分区内计算规则和分区间计算规则相同时，aggregateByKey就可以简化为foldByKey
 
+```scala
+object Spark14_RDD_Operator_Transform_foldByKey {
 
+  def main(args: Array[String]): Unit = {
 
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
 
+    val rdd = sc.makeRDD(List(("a", 1), ("a", 2), ("a", 3), ("b", 4)), 2)
 
+    // 如果聚合计算时，分区内和分区间计算规则相同，spark提供了简化的方法
+    val resRdd: RDD[(String, Int)] = rdd.foldByKey(0)( _ + _)
 
+    resRdd.collect().foreach(println)
 
+    sc.stop()
 
+  }
+}
+```
 
+#### 6 combineByKey
 
+最通用的对key-value型rdd进行聚集操作的聚集函数（aggregation function）。类似于aggregate()，combineByKey()允许用户返回值的类型与输入不一致。
 
+```scala
+object Spark14_RDD_Operator_Transform_combineByKey {
 
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(
+      ("a", 1), ("a", 2), ("b", 3),
+      ("b", 4), ("b", 5), ("a", 6)
+    ),2)
+
+    // combineByKey : 方法需要三个参数
+    // 第一个参数表示：将相同key的第一个数据进行结构的转换，实现操作
+    // 第二个参数表示：分区内的计算规则
+    // 第三个参数表示：分区间的计算规则
+
+    val combinRdd: RDD[(String, (Int, Int))] = rdd.combineByKey(
+      v => (v, 1),
+      (t: (Int, Int), v) => (t._1 + v, t._2 + 1),
+      (t1: (Int, Int), t2: (Int, Int)) => (t1._1 + t2._1, t1._2 + t2._2))
+
+    val resRdd: RDD[(String, Int)] = combinRdd.mapValues {
+      case (k, v) => {
+        k / v
+      }
+    }
+    resRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+总结：
+
+思考一个问题：reduceByKey、foldByKey、aggregateByKey、combineByKey的区别？
+
+- reduceByKey: 相同key的第一个数据不进行任何计算，分区内和分区间计算规则相同
+- FoldByKey: 相同key的第一个数据和初始值进行分区内计算，分区内和分区间计算规则相同
+- AggregateByKey：相同key的第一个数据和初始值进行分区内计算，分区内和分区间计算规则可以不相同
+- CombineByKey:当计算时，发现数据结构不满足要求时，可以让第一个数据转换结构。分区内和分区间计算规则不相同。
+
+```scala
+object Spark14_RDD_Operator_Transform_totalByKey {
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    // TODO 算子 - (Key - Value类型)
+
+    val rdd = sc.makeRDD(List(
+      ("a", 1), ("a", 2), ("b", 3),
+      ("b", 4), ("b", 5), ("a", 6)
+    ),2)
+
+    /*
+    reduceByKey:
+
+         combineByKeyWithClassTag[V](
+             (v: V) => v, // 第一个值不会参与计算
+             func, // 分区内计算规则
+             func, // 分区间计算规则
+             )
+
+    aggregateByKey :
+
+        combineByKeyWithClassTag[U](
+            (v: V) => cleanedSeqOp(createZero(), v), // 初始值和第一个key的value值进行的分区内数据操作
+            cleanedSeqOp, // 分区内计算规则
+            combOp,       // 分区间计算规则
+            )
+
+    foldByKey:
+
+        combineByKeyWithClassTag[V](
+            (v: V) => cleanedFunc(createZero(), v), // 初始值和第一个key的value值进行的分区内数据操作
+            cleanedFunc,  // 分区内计算规则
+            cleanedFunc,  // 分区间计算规则
+            )
+
+    combineByKey :
+
+        combineByKeyWithClassTag(
+            createCombiner,  // 相同key的第一条数据进行的处理函数
+            mergeValue,      // 表示分区内数据的处理函数
+            mergeCombiners,  // 表示分区间数据的处理函数
+            )
+
+     */
+
+    rdd.reduceByKey(_+_) // wordcount
+    rdd.aggregateByKey(0)(_+_, _+_) // wordcount
+    rdd.foldByKey(0)(_+_) // wordcount
+    rdd.combineByKey(v=>v,(x:Int,y)=>x+y,(x:Int,y:Int)=>x+y) // wordcount
+
+    sc.stop()
+
+  }
+}
+```
+
+#### 7 join
+
+```scala
+object Spark14_RDD_Operator_Transform_join {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    // join : 两个不同数据源的数据，相同的key的value会连接在一起，形成元组
+    //        如果两个数据源中key没有匹配上，那么数据不会出现在结果中
+    //        如果两个数据源中key有多个相同的，会依次匹配，可能会出现笛卡尔乘积，数据量会几何性增长，会导致性能降低。
+
+    val rdd1: RDD[(String, Int)] = sc.makeRDD(List(("a", 1), ("b", 2), ("c", 3)))
+    val rdd2: RDD[(String, Int)] = sc.makeRDD(List(("a", 9), ("b", 22), ("c", 33)))
+    rdd1.join(rdd2).collect().foreach(println)
+    sc.stop()
+
+  }
+}
+```
+
+#### 8 leftOuterJoin
+
+```scala
+object Spark14_RDD_Operator_Transform_rightOuterJoin {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd1: RDD[(String, Int)] = sc.makeRDD(List(("a", 1), ("b", 2), ("c", 3)))
+    val rdd2: RDD[(String, Int)] = sc.makeRDD(List(("a", 9), ("b", 22)))
+    rdd1.leftOuterJoin(rdd2).collect().foreach(println)
+    sc.stop()
+
+  }
+}
+```
+
+### 案例实操
+
+==周末看==
 
 
 
