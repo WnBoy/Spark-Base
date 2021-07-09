@@ -154,6 +154,8 @@ RDD方法分为两类：
 - 行动：触发任务的调度和作业的执行
   - collect
 
+## RDD 转换算子
+
 ### 3.1 map
 
 1. rdd的计算一个分区内的数据是一个一个执行逻辑
@@ -333,7 +335,7 @@ spark中，shullfe操作必须落盘处理，不能中在内存中数据等待�
 aggregateByKey存在函数柯里化，有两个参数列表
 
 - 第一个参数列表,需要传递一个参数，表示为初始值
-  - 主要用于当碰见第一个key的时候，和value进行分区内计算
+  - 主要用于当碰见第一个key的时候，和value进行==分区内==计算
 
 - 第二个参数列表需要传递2个参数
   - 第一个参数表示分区内计算规则
@@ -560,7 +562,138 @@ object Spark14_RDD_Operator_Transform_rightOuterJoin {
 
 
 
+## 行动算子
 
+所谓的行动算子，其实就是触发作业(Job)执行的方法，底层代码调用的是环境对象的runJob方法，底层代码中会创建ActiveJob，并提交执行。
+
+```scala
+object Spark14_RDD_Operator_Transform_action {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+    
+    // TODO - 行动算子
+    // 所谓的行动算子，其实就是触发作业(Job)执行的方法
+    // 底层代码调用的是环境对象的runJob方法
+    // 底层代码中会创建ActiveJob，并提交执行。
+    
+    rdd.collect().foreach(println)
+    sc.stop()
+
+  }
+}
+```
+
+### 1 reduce & collect & count & first & take & takeOrdered
+
+```scala
+object Spark2_RDD_Operator_Transform_reduce {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+
+    // 1.reduce
+    val res: Int = rdd.reduce(_+_)
+    println(res)
+
+    // 2. collect
+    val array: Array[Int] = rdd.collect()
+    println(array.mkString(","))
+
+    // 3. count
+    val count: Long = rdd.count()
+    println(count)
+
+    // 4.first
+    val first: Int = rdd.first()
+    println(first)
+
+    // 5. take
+    val take: Array[Int] = rdd.take(3)
+    println(take.mkString(","))
+
+    // takeOrdered : 数据排序后，取N个数据
+    val rdd1 = sc.makeRDD(List(4,2,3,1))
+    val ints1: Array[Int] = rdd1.takeOrdered(3)
+    println(ints1.mkString(","))
+
+    sc.stop()
+  }
+}
+```
+
+### 2 aggregate
+
+分区的数据通过初始值和**分区内**的数据进行聚合，然后再和初始值进行**分区间**的数据聚合
+
+```scala
+object Spark3_RDD_Operator_Transform_aggregate {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+    // aggregateByKey : 初始值只会参与分区内计算
+    // aggregate : 初始值会参与分区内计算,并且和参与分区间计算
+    val res: Int = rdd.aggregate(10)(_ + _, _ + _)
+    println(res)
+    sc.stop()
+  }
+}
+```
+
+ ### 3 folder
+
+```scala
+object Spark4_RDD_Operator_Transform_folder {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+
+    val res: Int = rdd.fold(10)(_ + _)
+    println(res)
+    sc.stop()
+  }
+}
+```
+
+### 4 countByKey
+
+```scala
+object Spark5_RDD_Operator_Transform_countbykey {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    //    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+
+    //    val intToLong: collection.Map[Int, Long] = rdd.countByValue()
+    //    println(intToLong)
+
+    val rdd: RDD[(String, Int)] = sc.makeRDD(List(("a", 2), ("b", 2), ("b", 2), ("c", 2)))
+    val stringToLong: collection.Map[String, Long] = rdd.countByKey()
+    println(stringToLong)
+
+    sc.stop()
+  }
+}
+```
 
 
 
