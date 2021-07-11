@@ -1075,6 +1075,116 @@ case class User(){
 }
 ```
 
+## RDD 序列化
+
+### 1 闭包检查
+
+从计算的角度, ==算子以外的代码都是在Driver端执行, 算子里面的代码都是在Executor端执行==。那么在scala的函数式编程中，就会导致**算子内**经常会用到**算子外**的数据，这样就形成了闭包的效果，如果使用的算子外的数据无法序列化，就意味着无法传值给Executor端执行，就会发生错误，所以需要在执行任务计算前，检测闭包内的对象是否可以进行序列化，这个操作我们称之为闭包检测。Scala2.12版本后闭包编译方式发生了改变
+
+### 2 序列化方法和属性
+
+从计算的角度, 算子以外的代码都是在Driver端执行, 算子里面的代码都是在Executor端执行，看如下代码：
+
+```scala
+package com.atguigu.bigdata.spark.core.rdd.serial
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark01_RDD_Serial {
+
+    def main(args: Array[String]): Unit = {
+        val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+        val sc = new SparkContext(sparConf)
+
+        val rdd: RDD[String] = sc.makeRDD(Array("hello world", "hello spark", "hive", "atguigu"))
+
+        val search = new Search("h")
+
+        //search.getMatch1(rdd).collect().foreach(println)
+        search.getMatch2(rdd).collect().foreach(println)
+
+        sc.stop()
+    }
+    // 查询对象
+    // 类的构造参数其实是类的属性, 构造参数需要进行闭包检测，其实就等同于类进行闭包检测
+    class Search(query:String){
+
+        def isMatch(s: String): Boolean = {
+            s.contains(this.query)
+        }
+
+        // 函数序列化案例
+        def getMatch1 (rdd: RDD[String]): RDD[String] = {
+            rdd.filter(isMatch)
+        }
+
+        // 属性序列化案例
+        def getMatch2(rdd: RDD[String]): RDD[String] = {
+            val s = query
+            rdd.filter(x => x.contains(s))
+        }
+    }
+}
+```
+
+### 3 Kryo序列化框架
+
+参考地址: https://github.com/EsotericSoftware/kryo
+Java的序列化能够序列化任何的类。但是比较重（字节多），序列化后，对象的提交也比较大。Spark出于性能的考虑，Spark2.0开始支持另外一种Kryo序列化机制。Kryo速度是Serializable的10倍。当RDD在Shuffle数据的时候，简单数据类型、数组和字符串类型已经在Spark内部使用Kryo来序列化。
+注意：即使使用Kryo序列化，也要继承Serializable接口。
+
+```scala
+package com.xupt.rdd.seria
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife 
+  */
+object Spark02_RDD_Seria {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .registerKryoClasses(Array(classOf[Search]))
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[String] = sc.makeRDD(Array("hello world", "hello spark", "hive", "atguigu"))
+
+    val search = new Search("h")
+
+    search.getMatch1(rdd).collect().foreach(println)
+//    search.getMatch2(rdd).collect().foreach(println)
+
+    sc.stop()
+  }
+
+  // 查询对象
+  //  class Search(query:String) extends Serializable {
+  // 类的构造参数其实是类的属性, 构造参数需要进行闭包检测，其实就等同于类进行闭包检测
+  class Search(query: String) extends Serializable {
+
+    def isMatch(s: String): Boolean = {
+      s.contains(this.query)
+    }
+
+    // 函数序列化案例
+    def getMatch1(rdd: RDD[String]): RDD[String] = {
+      rdd.filter(isMatch)
+    }
+
+    // 属性序列化案例
+    def getMatch2(rdd: RDD[String]): RDD[String] = {
+      val s = query
+      rdd.filter(x => x.contains(s))
+    }
+  }
+
+}
+
+```
+
 
 
 
