@@ -1185,6 +1185,188 @@ object Spark02_RDD_Seria {
 
 ```
 
+## RDD 依赖关系
+
+### 1 RDD 血缘关系
+
+RDD只支持粗粒度转换，即在大量记录上执行的单个操作。将创建RDD的一系列Lineage（血统）记录下来，以便恢复丢失的分区。RDD的Lineage会记录RDD的元数据信息和转换行为，当该RDD的部分分区数据丢失时，它可以根据这些信息来**重新运算**和恢复丢失的数据分区。
+
+
+
+![image-20210711215823218](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711215823218.png)
+
+![image-20210711215747701](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711215747701.png)
+
+![image-20210711220021788](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711220021788.png)
+
+代码示例：
+
+```scala
+package com.xupt.rdd.dep
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark01_RDD_Dep {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+        val sc = new SparkContext(sparConf)
+
+        val lines: RDD[String] = sc.textFile("datas/word.txt")
+        println(lines.toDebugString)
+        println("*************************")
+        val words: RDD[String] = lines.flatMap(_.split(" "))
+        println(words.toDebugString)
+        println("*************************")
+        val wordToOne = words.map(word=>(word,1))
+        println(wordToOne.toDebugString)
+        println("*************************")
+        val wordToSum: RDD[(String, Int)] = wordToOne.reduceByKey(_+_)
+        println(wordToSum.toDebugString)
+        println("*************************")
+        val array: Array[(String, Int)] = wordToSum.collect()
+        array.foreach(println)
+
+        sc.stop()
+
+    }
+}
+```
+
+输出：
+
+```scala
+(1) datas/word.txt MapPartitionsRDD[1] at textFile at Spark01_RDD_Dep.scala:13 []
+ |  datas/word.txt HadoopRDD[0] at textFile at Spark01_RDD_Dep.scala:13 []
+*************************
+(1) MapPartitionsRDD[2] at flatMap at Spark01_RDD_Dep.scala:16 []
+ |  datas/word.txt MapPartitionsRDD[1] at textFile at Spark01_RDD_Dep.scala:13 []
+ |  datas/word.txt HadoopRDD[0] at textFile at Spark01_RDD_Dep.scala:13 []
+*************************
+(1) MapPartitionsRDD[3] at map at Spark01_RDD_Dep.scala:19 []
+ |  MapPartitionsRDD[2] at flatMap at Spark01_RDD_Dep.scala:16 []
+ |  datas/word.txt MapPartitionsRDD[1] at textFile at Spark01_RDD_Dep.scala:13 []
+ |  datas/word.txt HadoopRDD[0] at textFile at Spark01_RDD_Dep.scala:13 []
+*************************
+(1) ShuffledRDD[4] at reduceByKey at Spark01_RDD_Dep.scala:22 []
+ +-(1) MapPartitionsRDD[3] at map at Spark01_RDD_Dep.scala:19 []
+    |  MapPartitionsRDD[2] at flatMap at Spark01_RDD_Dep.scala:16 []
+    |  datas/word.txt MapPartitionsRDD[1] at textFile at Spark01_RDD_Dep.scala:13 []
+    |  datas/word.txt HadoopRDD[0] at textFile at Spark01_RDD_Dep.scala:13 []
+*************************
+(spark,1)
+(Hello,2)
+(world,1)
+```
+
+### 2 RDD 依赖关系
+
+这里所谓的依赖关系，其实就是两个相邻RDD之间的关系
+
+```scala
+package com.xupt.rdd.dep
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark02_RDD_Dep {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+        val sc = new SparkContext(sparConf)
+
+        val lines: RDD[String] = sc.textFile("datas/word.txt")
+        println(lines.dependencies)
+        println("*************************")
+        val words: RDD[String] = lines.flatMap(_.split(" "))
+        println(words.dependencies)
+        println("*************************")
+        val wordToOne = words.map(word=>(word,1))
+        println(wordToOne.dependencies)
+        println("*************************")
+        val wordToSum: RDD[(String, Int)] = wordToOne.reduceByKey(_+_)
+        println(wordToSum.dependencies)
+        println("*************************")
+        val array: Array[(String, Int)] = wordToSum.collect()
+        array.foreach(println)
+
+        sc.stop()
+
+    }
+}
+```
+
+输出：
+
+```scala
+List(org.apache.spark.OneToOneDependency@799ed4e8)
+*************************
+List(org.apache.spark.OneToOneDependency@712cfb63)
+*************************
+List(org.apache.spark.OneToOneDependency@a098d76)
+*************************
+List(org.apache.spark.ShuffleDependency@48df4071)
+*************************
+(spark,1)
+(Hello,2)
+(world,1)
+```
+
+### 3 窄依赖
+
+窄依赖表示每一个父(上游)RDD的Partition最多被子（下游）RDD的一个Partition使用，窄依赖我们形象的比喻为独生子女。
+
+```scala
+class OneToOneDependency[T](rdd : org.apache.spark.rdd.RDD[T]) extends org.apache.spark.NarrowDependency[T]
+```
+
+![image-20210711222347625](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711222347625.png)
+
+![image-20210711223004212](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711223004212.png)
+
+### 4 宽依赖
+
+宽依赖表示同一个父（上游）RDD的Partition被多个子（下游）RDD的Partition依赖，会引起Shuffle，总结：宽依赖我们形象的比喻为多生。
+
+```scala
+class ShuffleDependency[K, V, C]
+```
+
+![image-20210711222541472](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711222541472.png)
+
+![image-20210711223102434](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711223102434.png)
+
+### 5 RDD 阶段划分
+
+DAG（Directed Acyclic Graph）有向无环图是由点和线组成的拓扑图形，该图形具有方向，不会闭环。例如，DAG记录了RDD的转换过程和任务的阶段。
+
+![image-20210711231323008](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711231323008.png)
+
+![image-20210711231413116](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711231413116.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
