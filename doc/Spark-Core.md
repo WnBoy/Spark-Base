@@ -1,4 +1,223 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# WordCount
+
+## 实现一
+
+```scala
+object Spark01_WordCount {
+  def main(args: Array[String]): Unit = {
+    // 1 建立和Spark的连接
+    val sparkConf = new SparkConf().setMaster("local").setAppName("WorldCount")
+    val sparkContext = new SparkContext(sparkConf)
+    // 2 执行业务
+    //
+    val lines: RDD[String] = sparkContext.textFile("datas")
+    var words: RDD[String] = lines.flatMap(_.split(" "))
+    val wordGroup: RDD[(String, Iterable[String])] = words.groupBy(word => word)
+    val wordCount=wordGroup.map {
+      case (word, list) => {
+        (word, list.size)
+      }
+    }
+    val array: Array[(String, Int)] = wordCount.collect()
+    array.foreach(println)
+
+    // 3 关闭连接
+    sparkContext.stop()
+
+  }
+}
+```
+
+## 实现二
+
+```scala
+package com.atguigu.bigdata.spark.core.wc
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark02_WordCount1 {
+
+    def main(args: Array[String]): Unit = {
+
+        // Application
+        // Spark框架
+        // TODO 建立和Spark框架的连接
+        // JDBC : Connection
+        val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+        val sc = new SparkContext(sparConf)
+
+        // TODO 执行业务操作
+
+        // 1. 读取文件，获取一行一行的数据
+        //    hello world
+        val lines: RDD[String] = sc.textFile("datas")
+
+        // 2. 将一行数据进行拆分，形成一个一个的单词（分词）
+        //    扁平化：将整体拆分成个体的操作
+        //   "hello world" => hello, world, hello, world
+        val words: RDD[String] = lines.flatMap(_.split(" "))
+
+        // 3. 将单词进行结构的转换,方便统计
+        // word => (word, 1)
+        val wordToOne = words.map(word=>(word,1))
+
+        // 4. 将转换后的数据进行分组聚合
+        // 相同key的value进行聚合操作
+        // (word, 1) => (word, sum)
+        val wordToSum: RDD[(String, Int)] = wordToOne.reduceByKey(_+_)
+
+        // 5. 将转换结果采集到控制台打印出来
+        val array: Array[(String, Int)] = wordToSum.collect()
+        array.foreach(println)
+
+        // TODO 关闭连接
+        sc.stop()
+
+    }
+}
+
+```
+
+## 实现三
+
+```scala
+package com.atguigu.bigdata.spark.core.wc
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable
+
+object Spark03_WordCount {
+    def main(args: Array[String]): Unit = {
+
+        val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+        val sc = new SparkContext(sparConf)
+
+        wordcount91011(sc)
+
+        sc.stop()
+
+    }
+
+    // groupBy
+    def wordcount1(sc : SparkContext): Unit = {
+
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val group: RDD[(String, Iterable[String])] = words.groupBy(word=>word)
+        val wordCount: RDD[(String, Int)] = group.mapValues(iter=>iter.size)
+    }
+
+    // groupByKey
+    def wordcount2(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val group: RDD[(String, Iterable[Int])] = wordOne.groupByKey()
+        val wordCount: RDD[(String, Int)] = group.mapValues(iter=>iter.size)
+    }
+
+    // reduceByKey
+    def wordcount3(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val wordCount: RDD[(String, Int)] = wordOne.reduceByKey(_+_)
+    }
+
+    // aggregateByKey
+    def wordcount4(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val wordCount: RDD[(String, Int)] = wordOne.aggregateByKey(0)(_+_, _+_)
+    }
+
+    // foldByKey
+    def wordcount5(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val wordCount: RDD[(String, Int)] = wordOne.foldByKey(0)(_+_)
+    }
+
+    // combineByKey
+    def wordcount6(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val wordCount: RDD[(String, Int)] = wordOne.combineByKey(
+            v=>v,
+            (x:Int, y) => x + y,
+            (x:Int, y:Int) => x + y
+        )
+    }
+
+    // countByKey
+    def wordcount7(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordOne = words.map((_,1))
+        val wordCount: collection.Map[String, Long] = wordOne.countByKey()
+    }
+
+    // countByValue
+    def wordcount8(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+        val wordCount: collection.Map[String, Long] = words.countByValue()
+    }
+
+    // reduce, aggregate, fold
+    def wordcount91011(sc : SparkContext): Unit = {
+        val rdd = sc.makeRDD(List("Hello Scala", "Hello Spark"))
+        val words = rdd.flatMap(_.split(" "))
+
+        // 【（word, count）,(word, count)】
+        // word => Map[(word,1)]
+        val mapWord = words.map(
+            word => {
+                mutable.Map[String, Long]((word,1))
+            }
+        )
+
+       val wordCount = mapWord.reduce(
+            (map1, map2) => {
+                map2.foreach{
+                    case (word, count) => {
+                        val newCount = map1.getOrElse(word, 0L) + count
+                        map1.update(word, newCount)
+                    }
+                }
+                map1
+            }
+        )
+
+        println(wordCount)
+    }
+
+}
+
+```
+
 # RDD
+
 ## 1 Rdd 基本概念
 
  - RDD是最小的计算单元
@@ -694,6 +913,108 @@ object Spark5_RDD_Operator_Transform_countbykey {
   }
 }
 ```
+
+### 5 save
+
+将数据保存到不同格式的文件中
+
+```scala
+object Spark5_RDD_Operator_Transform_save {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+    rdd.saveAsTextFile("output")
+    rdd.saveAsObjectFile("output")
+
+    val rdd2: RDD[(String, Int)] = sc.makeRDD(List(("a",2),("b",3)))
+
+    // saveAsSequenceFile方法要求数据的格式必须为K-V类型
+    rdd2.saveAsSequenceFile("output")
+
+    sc.stop()
+  }
+}
+```
+
+### 6 foreach
+
+分布式遍历RDD中的每一个元素，调用指定函数
+
+```scala
+object Spark7_RDD_Operator_Transform_Foreach {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+
+    // foreach 其实是Driver端内存集合的循环遍历方法
+    rdd.collect().foreach(println)
+
+    println("**********")
+
+    // foreach 其实是Executor端内存数据打印
+
+    // 算子 ： Operator（操作）
+    //         RDD的方法和Scala集合对象的方法不一样
+    //         集合对象的方法都是在同一个节点的内存中完成的。
+    //         RDD的方法可以将计算逻辑发送到Executor端（分布式节点）执行
+    //         为了区分不同的处理效果，所以将RDD的方法称之为算子。
+    //        RDD的方法外部的操作都是在Driver端执行的，而方法内部的逻辑代码是在Executor端执行。
+
+    rdd.foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+闭包检测：RDD算子中传递的函数是会包含闭包操作，那么就会进行检测功能
+
+```scala
+package com.xupt.rdd.operator.action
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark7_RDD_Operator_Transform_Foreach1 {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4))
+    val user: User = new User()
+
+    // SparkException: Task not serializable
+    // NotSerializableException: com.atguigu.bigdata.spark.core.rdd.operator.action.Spark07_RDD_Operator_Action$User
+
+    // RDD算子中传递的函数是会包含闭包操作，那么就会进行检测功能
+    // 闭包检测
+    rdd.foreach(num => {
+      println(s"age is :${user.age + num}")
+    })
+
+    sc.stop()
+  }
+}
+
+//class User extends Serializable {
+
+// 样例类在编译时，会自动混入序列化特质（实现可序列化接口）
+case class User(){
+  val age: Int = 10
+}
+```
+
+
 
 
 
