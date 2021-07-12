@@ -1347,9 +1347,20 @@ DAG（Directed Acyclic Graph）有向无环图是由点和线组成的拓扑图�
 
 ![image-20210711231413116](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711231413116.png)
 
+### 6 RDD任务划分
 
+RDD任务切分中间分为：Application、Job、Stage和Task
 
+⚫ Application：初始化一个SparkContext即生成一个Application；
+⚫ Job：一个Action算子就会生成一个Job；
+⚫ Stage：Stage等于宽依赖(ShuffleDependency)的个数加1；
+⚫ Task：一个Stage阶段中，最后一个RDD的分区个数就是Task的个数。
 
+**注意：Application->Job->Stage->Task每一层都是1对n的关系。**
+
+![image-20210712230906296](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210712230906296.png)
+
+![image-20210712224836678](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210712224836678.png)
 
 
 
