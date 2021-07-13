@@ -1362,11 +1362,155 @@ RDD任务切分中间分为：Application、Job、Stage和Task
 
 ![image-20210712224836678](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210712224836678.png)
 
+## RDD持久化
+
+### 1 RDD缓存
+
+RDD通过Cache或者Persist方法将前面的计算结果缓存，默认情况下会把数据以缓存在JVM的堆内存中。但是并不是这两个方法被调用时立即缓存，而是触发后面的action算子时，该RDD将会被缓存在计算节点的内存中，并供后面重用。
+
+缓存有可能丢失，或者存储于内存的数据由于内存不足而被删除，RDD的缓存容错机制保证了即使缓存丢失也能保证计算的正确执行。通过基于RDD的一系列转换，丢失的数据会被重算，由于RDD的各个Partition是相对独立的，因此只需要计算丢失的部分即可，并不需要重算全部Partition。
+
+Spark会自动对一些Shuffle操作的中间数据做持久化操作(比如：reduceByKey)。这样做的目的是为了当一个节点Shuffle失败了避免重新计算整个输入。但是，在实际使用的时候，如果想重用数据，仍然建议调用persist或cache。
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark03_RDD_Persist {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("Persist")
+    val sc = new SparkContext(sparConf)
+
+    val list = List("Hello Scala", "Hello Spark")
+
+    val rdd = sc.makeRDD(list)
+
+    val flatRDD = rdd.flatMap(_.split(" "))
+
+    val mapRDD = flatRDD.map(word => {
+      println("@@@@@@@@@@@@")
+      (word, 1)
+    })
+    // cache默认持久化的操作，只能将数据保存到内存中，如果想要保存到磁盘文件，需要更改存储级别
+    // mapRDD.cache()
+
+    // 持久化操作必须在行动算子执行时完成的。
+    mapRDD.persist(StorageLevel.DISK_ONLY)
+
+    val reduceRDD: RDD[(String, Int)] = mapRDD.reduceByKey(_ + _)
+    reduceRDD.collect().foreach(println)
+    println("**************************************")
+    val groupRDD = mapRDD.groupByKey()
+    groupRDD.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+### 2 RDD CheckPoint检查点
+
+所谓的检查点其实就是通过将RDD中间结果写入磁盘
+
+由于血缘依赖 过长会造成容错本高，这样就不如在中间阶段做检查点容错，如果检测点之后节点出现问题，可以从检测点做血缘，减少了开销。
+
+对RDD做checkpoint操作不会马上执行，必须ActionAction ActionAction 操作才能触发。
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark04_RDD_Persist {
+
+    def main(args: Array[String]): Unit = {
+        val sparConf = new SparkConf().setMaster("local").setAppName("Persist")
+        val sc = new SparkContext(sparConf)
+        // 设置的保存路径
+        sc.setCheckpointDir("cp")
+
+        val list = List("Hello Scala", "Hello Spark")
+
+        val rdd = sc.makeRDD(list)
+
+        val flatRDD = rdd.flatMap(_.split(" "))
+
+        val mapRDD = flatRDD.map(word=>{
+            println("@@@@@@@@@@@@")
+            (word,1)
+        })
+        // checkpoint 需要落盘，需要指定检查点保存路径
+        // 检查点路径保存的文件，当作业执行完毕后，不会被删除
+        // 一般保存路径都是在分布式存储系统：HDFS
+        // checkpoint会导致从数据源再执行一遍
+        mapRDD.checkpoint()
+
+        val reduceRDD: RDD[(String, Int)] = mapRDD.reduceByKey(_+_)
+        reduceRDD.collect().foreach(println)
+        println("**************************************")
+        val groupRDD = mapRDD.groupByKey()
+        groupRDD.collect().foreach(println)
 
 
+        sc.stop()
+    }
+}
 
+```
 
+### 3 缓存和检查点区别
 
+1）Cache缓存只是将数据保存起来，不切断血缘依赖。Checkpoint检查点切断血缘依赖。
+2）Cache缓存的数据通常存储在磁盘、内存等地方，可靠性低。Checkpoint的数据通常存储在HDFS等容错、高可用的文件系统，可靠性高。
+3）建议对checkpoint()的RDD使用Cache缓存，这样checkpoint的job只需从Cache缓存中读取数据即可，否则需要再从头计算一次RDD。
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark06_RDD_Persist {
+
+    def main(args: Array[String]): Unit = {
+
+        // cache : 将数据临时存储在内存中进行数据重用
+        //         会在血缘关系中添加新的依赖。一旦，出现问题，可以重头读取数据
+        // persist : 将数据临时存储在磁盘文件中进行数据重用
+        //           涉及到磁盘IO，性能较低，但是数据安全
+        //           如果作业执行完毕，临时保存的数据文件就会丢失
+        // checkpoint : 将数据长久地保存在磁盘文件中进行数据重用
+        //           涉及到磁盘IO，性能较低，但是数据安全
+        //           为了保证数据安全，所以一般情况下，会独立执行作业
+        //           为了能够提高效率，一般情况下，是需要和cache联合使用
+        //           执行过程中，会切断血缘关系。重新建立新的血缘关系
+        //           checkpoint等同于改变数据源
+
+        val sparConf = new SparkConf().setMaster("local").setAppName("Persist")
+        val sc = new SparkContext(sparConf)
+        sc.setCheckpointDir("cp")
+
+        val list = List("Hello Scala", "Hello Spark")
+
+        val rdd = sc.makeRDD(list)
+
+        val flatRDD = rdd.flatMap(_.split(" "))
+
+        val mapRDD = flatRDD.map(word=>{
+            (word,1)
+        })
+        //mapRDD.cache()
+        mapRDD.checkpoint()
+        println(mapRDD.toDebugString)
+        val reduceRDD: RDD[(String, Int)] = mapRDD.reduceByKey(_+_)
+        reduceRDD.collect().foreach(println)
+        println("**************************************")
+        println(mapRDD.toDebugString)
+
+        sc.stop()
+    }
+}
+```
 
 
 
