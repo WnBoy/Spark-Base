@@ -1512,15 +1512,299 @@ object Spark06_RDD_Persist {
 }
 ```
 
+## RDD分区器
 
+Spark目前支持Hash分区和Range分区，和用户自定义分区。Hash分区为当前的默认分区。分区器直接决定了RDD中分区的个数、RDD中每条数据经过Shuffle后进入哪个分区，进而决定了Reduce的个数。
 
+- 只有Key-Value类型的RDD才有分区器，非Key-Value类型的RDD分区的值是None
+- 每个RDD的分区ID范围：0 ~ (numPartitions - 1)，决定这个值是属于那个分区的。
 
+![image-20210714232509584](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210714232509584.png)
 
+### 1 Hash分区：对于给定的key，计算其hashCode,并除以分区个数取余
 
+```scala
+class HashPartitioner(partitions: Int) extends Partitioner {
+  require(partitions >= 0, s"Number of partitions ($partitions) cannot be negative.")
 
+  def numPartitions: Int = partitions
 
+  def getPartition(key: Any): Int = key match {
+    case null => 0
+    case _ => Utils.nonNegativeMod(key.hashCode, numPartitions)
+  }
 
+  override def equals(other: Any): Boolean = other match {
+    case h: HashPartitioner =>
+      h.numPartitions == numPartitions
+    case _ =>
+      false
+  }
 
+  override def hashCode: Int = numPartitions
+}
+```
+
+### 2 Range分区：将一定范围内的数据映射到一个分区中，尽量保证每个分区数据均匀，而且分区间有序。
+
+```scala
+class RangePartitioner[K : Ordering : ClassTag, V](
+    partitions: Int,
+    rdd: RDD[_ <: Product2[K, V]],
+    private var ascending: Boolean = true,
+    val samplePointsPerPartitionHint: Int = 20)
+  extends Partitioner {
+
+  // A constructor declared in order to maintain backward compatibility for Java, when we add the
+  // 4th constructor parameter samplePointsPerPartitionHint. See SPARK-22160.
+  // This is added to make sure from a bytecode point of view, there is still a 3-arg ctor.
+  def this(partitions: Int, rdd: RDD[_ <: Product2[K, V]], ascending: Boolean) = {
+    this(partitions, rdd, ascending, samplePointsPerPartitionHint = 20)
+  }
+
+  // We allow partitions = 0, which happens when sorting an empty RDD under the default settings.
+  require(partitions >= 0, s"Number of partitions cannot be negative but found $partitions.")
+  require(samplePointsPerPartitionHint > 0,
+    s"Sample points per partition must be greater than 0 but found $samplePointsPerPartitionHint")
+
+  private var ordering = implicitly[Ordering[K]]
+
+  // An array of upper bounds for the first (partitions - 1) partitions
+  private var rangeBounds: Array[K] = {
+    if (partitions <= 1) {
+      Array.empty
+    } else {
+      // This is the sample size we need to have roughly balanced output partitions, capped at 1M.
+      // Cast to double to avoid overflowing ints or longs
+      val sampleSize = math.min(samplePointsPerPartitionHint.toDouble * partitions, 1e6)
+      // Assume the input partitions are roughly balanced and over-sample a little bit.
+      val sampleSizePerPartition = math.ceil(3.0 * sampleSize / rdd.partitions.length).toInt
+      val (numItems, sketched) = RangePartitioner.sketch(rdd.map(_._1), sampleSizePerPartition)
+      if (numItems == 0L) {
+        Array.empty
+      } else {
+        // If a partition contains much more than the average number of items, we re-sample from it
+        // to ensure that enough items are collected from that partition.
+        val fraction = math.min(sampleSize / math.max(numItems, 1L), 1.0)
+        val candidates = ArrayBuffer.empty[(K, Float)]
+        val imbalancedPartitions = mutable.Set.empty[Int]
+        sketched.foreach { case (idx, n, sample) =>
+          if (fraction * n > sampleSizePerPartition) {
+            imbalancedPartitions += idx
+          } else {
+            // The weight is 1 over the sampling probability.
+            val weight = (n.toDouble / sample.length).toFloat
+            for (key <- sample) {
+              candidates += ((key, weight))
+            }
+          }
+        }
+        if (imbalancedPartitions.nonEmpty) {
+          // Re-sample imbalanced partitions with the desired sampling probability.
+          val imbalanced = new PartitionPruningRDD(rdd.map(_._1), imbalancedPartitions.contains)
+          val seed = byteswap32(-rdd.id - 1)
+          val reSampled = imbalanced.sample(withReplacement = false, fraction, seed).collect()
+          val weight = (1.0 / fraction).toFloat
+          candidates ++= reSampled.map(x => (x, weight))
+        }
+        RangePartitioner.determineBounds(candidates, math.min(partitions, candidates.size))
+      }
+    }
+  }
+
+  def numPartitions: Int = rangeBounds.length + 1
+
+  private var binarySearch: ((Array[K], K) => Int) = CollectionsUtils.makeBinarySearch[K]
+
+  def getPartition(key: Any): Int = {
+    val k = key.asInstanceOf[K]
+    var partition = 0
+    if (rangeBounds.length <= 128) {
+      // If we have less than 128 partitions naive search
+      while (partition < rangeBounds.length && ordering.gt(k, rangeBounds(partition))) {
+        partition += 1
+      }
+    } else {
+      // Determine which binary search method to use only once.
+      partition = binarySearch(rangeBounds, k)
+      // binarySearch either returns the match location or -[insertion point]-1
+      if (partition < 0) {
+        partition = -partition-1
+      }
+      if (partition > rangeBounds.length) {
+        partition = rangeBounds.length
+      }
+    }
+    if (ascending) {
+      partition
+    } else {
+      rangeBounds.length - partition
+    }
+  }
+
+  override def equals(other: Any): Boolean = other match {
+    case r: RangePartitioner[_, _] =>
+      r.rangeBounds.sameElements(rangeBounds) && r.ascending == ascending
+    case _ =>
+      false
+  }
+
+  override def hashCode(): Int = {
+    val prime = 31
+    var result = 1
+    var i = 0
+    while (i < rangeBounds.length) {
+      result = prime * result + rangeBounds(i).hashCode
+      i += 1
+    }
+    result = prime * result + ascending.hashCode
+    result
+  }
+
+  @throws(classOf[IOException])
+  private def writeObject(out: ObjectOutputStream): Unit = Utils.tryOrIOException {
+    val sfactory = SparkEnv.get.serializer
+    sfactory match {
+      case js: JavaSerializer => out.defaultWriteObject()
+      case _ =>
+        out.writeBoolean(ascending)
+        out.writeObject(ordering)
+        out.writeObject(binarySearch)
+
+        val ser = sfactory.newInstance()
+        Utils.serializeViaNestedStream(out, ser) { stream =>
+          stream.writeObject(scala.reflect.classTag[Array[K]])
+          stream.writeObject(rangeBounds)
+        }
+    }
+  }
+
+  @throws(classOf[IOException])
+  private def readObject(in: ObjectInputStream): Unit = Utils.tryOrIOException {
+    val sfactory = SparkEnv.get.serializer
+    sfactory match {
+      case js: JavaSerializer => in.defaultReadObject()
+      case _ =>
+        ascending = in.readBoolean()
+        ordering = in.readObject().asInstanceOf[Ordering[K]]
+        binarySearch = in.readObject().asInstanceOf[(Array[K], K) => Int]
+
+        val ser = sfactory.newInstance()
+        Utils.deserializeViaNestedStream(in, ser) { ds =>
+          implicit val classTag = ds.readObject[ClassTag[Array[K]]]()
+          rangeBounds = ds.readObject[Array[K]]()
+        }
+    }
+  }
+}
+```
+
+### 3 自定义分区
+
+```scala
+import org.apache.spark.{Partitioner, SparkConf, SparkContext}
+import org.apache.spark.rdd.RDD
+
+/**
+  * @author Wnlife 
+  */
+object Spark_01_RDD_Partitioner {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd: RDD[(String, String)] = sc.makeRDD(List(
+      ("nba", "123456"), ("cba", "93567"), ("gba", "123456"), ("nba", "123456")
+    ), 3)
+
+    val parRdd: RDD[(String, String)] = rdd.partitionBy(new myPartitioner())
+    parRdd.saveAsTextFile("output")
+  }
+
+  /**
+    * 自定义分区器
+    * 1. 继承Partitioner
+    * 2. 重写方法
+    */
+  class myPartitioner extends Partitioner {
+    // 分区数量
+    override def numPartitions: Int = 3
+    // 根据数据的key值返回数据所在的分区索引（从0开始）
+    override def getPartition(key: Any): Int = {
+      key match {
+        case "nba" => 0
+        case "cba" => 1
+        case _ => 2
+      }
+    }
+  }
+}
+```
+
+## RDD文件读取与保存
+
+Spark的数据读取及数据保存可以从两个维度来作区分：文件格式以及文件系统。
+文件格式分为：text文件、csv文件、sequence文件以及Object文件；
+文件系统分为：本地文件系统、HDFS、HBASE以及数据库。
+
+- text文件
+- sequence文件
+  - SequenceFile文件是Hadoop用来存储二进制形式的key-value对而设计的一种平面文件(Flat File)。在SparkContext中，可以调用sequenceFile[keyClass, valueClass](path)。
+- object对象文件
+  - 对象文件是将对象序列化后保存的文件，采用Java的序列化机制。可以通过objectFile[T: ClassTag](path)函数接收一个路径，读取对象文件，返回对应的RDD，也可以通过调用saveAsObjectFile()实现对对象文件的输出。因为是序列化所以要指定类型。
+
+保存：
+
+```scala
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark01_RDD_IO_Save {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
+
+    val rdd = sc.makeRDD(
+      List(
+        ("a", 1),
+        ("b", 2),
+        ("c", 3)
+      )
+    )
+
+    rdd.saveAsTextFile("output1")
+    rdd.saveAsObjectFile("output2")
+    rdd.saveAsSequenceFile("output3")
+
+    sc.stop()
+  }
+}
+```
+
+读取：
+
+```scala
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark01_RDD_IO_Load {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
+
+    val rdd = sc.textFile("output1")
+    println(rdd.collect().mkString(","))
+
+    val rdd1 = sc.objectFile[(String, Int)]("output2")
+    println(rdd1.collect().mkString(","))
+
+    val rdd2 = sc.sequenceFile[String, Int]("output3")
+    println(rdd2.collect().mkString(","))
+
+    sc.stop()
+  }
+}
+```
 
 
 
