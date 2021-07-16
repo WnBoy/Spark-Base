@@ -2003,7 +2003,9 @@ object Spark03_Acc_WordCount {
 
 广播变量用来高效分发较大的对象。向所有工作节点发送一个较大的只读值，以供一个或多个Spark操作使用。比如，如果你的应用需要向所有节点发送一个较大的只读查询表，广播变量用起来都很顺手。在多个并行操作中使用同一个变量，但是 Spark会为每个任务分别发送。
 
-## 2 代码
+![image-20210716214441584](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210716214441584.png)
+
+## 2 代码变量
 
 ```scala
 import org.apache.spark.rdd.RDD
