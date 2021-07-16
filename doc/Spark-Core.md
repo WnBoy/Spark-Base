@@ -216,7 +216,15 @@ object Spark03_WordCount {
 
 ```
 
-# RDD
+# Spark核心编程
+
+Spark计算框架为了能够进行高并发和高吞吐的数据处理，封装了三大数据结构，用于处理不同的应用场景。三大数据结构分别是：
+➢ RDD : 弹性分布式数据集
+➢ 累加器：分布式**共享只写**变量
+➢ 广播变量：分布式**共享只读**变量
+接下来我们一起看看这三大数据结构是如何在数据处理中使用的。
+
+# 一、RDD
 
 ## 1 Rdd 基本概念
 
@@ -480,6 +488,8 @@ spark提供了一个简化的操作：
   - ```
     Can only zip RDDs with same number of elements in each partition
     ```
+
+
 
 ### 3.14 key-value 类型
 
@@ -749,9 +759,11 @@ object Spark14_RDD_Operator_Transform_join {
 
     val rdd1: RDD[(String, Int)] = sc.makeRDD(List(("a", 1), ("b", 2), ("c", 3)))
     val rdd2: RDD[(String, Int)] = sc.makeRDD(List(("a", 9), ("b", 22), ("c", 33)))
-    rdd1.join(rdd2).collect().foreach(println)
+    val resRdd: RDD[(String, (Int, Int))] = rdd1.join(rdd2)
+    
+    resRdd.collect().foreach(println)
+      
     sc.stop()
-
   }
 }
 ```
@@ -1806,11 +1818,256 @@ object Spark01_RDD_IO_Load {
 }
 ```
 
+# 二、Spark累加器
 
+## 1 实现原理
 
+累加器用来把Executor端变量信息聚合到Driver端。在Driver程序中定义的变量，在Executor端的每个Task都会得到这个变量的一份新的副本，每个task更新这些副本的值后，传回Driver端进行merge。
 
+![image-20210716195614247](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210716195614247.png)
 
+## 2 系统累加器
 
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.util.LongAccumulator
+import org.apache.spark.{SparkConf, SparkContext}
 
+object Spark01_Acc {
 
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
 
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4, 5))
+    // 获取系统累加器
+    // Spark默认就提供了简单数据聚合的累加器
+    // 累加器
+    val sumAcc: LongAccumulator = sc.longAccumulator("sum")
+
+    //    sc.doubleAccumulator
+    //sc.collectionAccumulator
+
+    rdd.foreach(v => {
+      // 使用累加器
+      sumAcc.add(v)
+    })
+    // 获取累加器的值
+    println(sumAcc.value)
+
+    sc.stop()
+  }
+}
+```
+
+累加器的使用注意：一般情况下，累加器会放置在行动算子进行操作
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.util.LongAccumulator
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark02_Acc {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4, 5))
+    // 获取系统累加器
+    // Spark默认就提供了简单数据聚合的累加器
+    // 累加器
+    val sumAcc: LongAccumulator = sc.longAccumulator("sum")
+
+    //    sc.doubleAccumulator
+    //sc.collectionAccumulator
+
+    val value: RDD[Int] = rdd.map(v => {
+      // 使用累加器
+      sumAcc.add(v)
+      v
+    })
+
+    // 获取累加器的值
+    // 少加：转换算子中调用累加器，如果没有行动算子的话，那么不会执行
+    // 多加：转换算子中调用累加器，如果没有行动算子的话，那么不会执行
+    // 一般情况下，累加器会放置在行动算子进行操作
+
+    value.collect()
+    value.collect()
+
+    // 获取累加器的值
+    println(sumAcc.value)
+
+    sc.stop()
+  }
+}
+```
+
+## 3 自定义累加器
+
+累加器实现wordcount
+
+```scala
+import org.apache.spark.util.AccumulatorV2
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable
+
+object Spark03_Acc_WordCount {
+  def main(args: Array[String]): Unit = {
+
+    val sparConf = new SparkConf().setMaster("local").setAppName("Acc")
+    val sc = new SparkContext(sparConf)
+
+    val rdd = sc.makeRDD(List("hello", "spark", "hello"))
+
+    // 累加器 : WordCount
+    // 创建累加器对象
+    val wcAcc = new MyAccumulator()
+
+    // 向Spark进行注册
+    sc.register(wcAcc, "wordCountAcc")
+
+    rdd.foreach(
+      word => {
+        // 数据的累加（使用累加器）
+        wcAcc.add(word)
+      }
+    )
+
+    // 获取累加器累加的结果
+    println(wcAcc.value)
+
+    sc.stop()
+
+  }
+
+  /*
+    自定义数据累加器：WordCount
+
+    1. 继承AccumulatorV2, 定义泛型
+       IN : 累加器输入的数据类型 String
+       OUT : 累加器返回的数据类型 mutable.Map[String, Long]
+
+    2. 重写方法（6）
+   */
+  class MyAccumulator extends AccumulatorV2[String, mutable.Map[String, Long]] {
+
+    private var wcMap = mutable.Map[String, Long]()
+
+    // 判断是否初始状态
+    override def isZero: Boolean = {
+      wcMap.isEmpty
+    }
+
+    override def copy(): AccumulatorV2[String, mutable.Map[String, Long]] = {
+      new MyAccumulator()
+    }
+
+    override def reset(): Unit = {
+      wcMap.clear()
+    }
+
+    // 获取累加器需要计算的值
+    override def add(word: String): Unit = {
+      val newCnt = wcMap.getOrElse(word, 0L) + 1
+      wcMap.update(word, newCnt)
+    }
+
+    // Driver合并多个累加器
+    override def merge(other: AccumulatorV2[String, mutable.Map[String, Long]]): Unit = {
+
+      val map1 = this.wcMap
+      val map2 = other.value
+
+      map2.foreach {
+        case (word, count) => {
+          val newCount = map1.getOrElse(word, 0L) + count
+          map1.update(word, newCount)
+        }
+      }
+    }
+
+    // 累加器结果
+    override def value: mutable.Map[String, Long] = {
+      wcMap
+    }
+  }
+}
+```
+
+# 三、广播变量
+
+## 1 实现原理
+
+广播变量用来高效分发较大的对象。向所有工作节点发送一个较大的只读值，以供一个或多个Spark操作使用。比如，如果你的应用需要向所有节点发送一个较大的只读查询表，广播变量用起来都很顺手。在多个并行操作中使用同一个变量，但是 Spark会为每个任务分别发送。
+
+## 2 代码
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable
+
+object Spark02_Acc {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
+
+    val rdd1: RDD[(String, Int)] = sc.makeRDD(List(("a", 1), ("b", 2), ("c", 3)))
+    // join会导致数据量几何增长，并且会影响shuffle的性能，不推荐使用
+    //    val rdd2: RDD[(String, Int)] = sc.makeRDD(List(("a", 4), ("b", 5), ("c", 6)))
+    //    val resRdd: RDD[(String, (Int, Int))] = rdd1.join(rdd2)
+
+    val map = mutable.Map(("a", 4), ("b", 5), ("c", 6))
+
+    // (a, 1),    (b, 2),    (c, 3)
+    // (a, (1,4)),(b, (2,5)),(c, (3,6))
+    rdd1.map {
+      case (w, c) => {
+        val newCount: Int = map.getOrElse(w, 0)
+        (w, (c, newCount))
+      }
+    }.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable
+
+object Spark02_Bc {
+
+  def main(args: Array[String]): Unit = {
+    val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
+    val sc = new SparkContext(sparConf)
+
+    val rdd1: RDD[(String, Int)] = sc.makeRDD(List(("a", 1), ("b", 2), ("c", 3)))
+
+    // 封装广播变量
+    val map = mutable.Map(("a", 4), ("b", 5), ("c", 6))
+    val mapBr: Broadcast[mutable.Map[String, Int]] = sc.broadcast(map)
+
+    // (a, 1),    (b, 2),    (c, 3)
+    // (a, (1,4)),(b, (2,5)),(c, (3,6))
+    rdd1.map {
+      case (w, c) => {
+        // 方法广播变量
+        val newCount: Int = mapBr.value.getOrElse(w, 0)
+        (w, (c, newCount))
+      }
+    }.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
