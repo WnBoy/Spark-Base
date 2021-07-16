@@ -5,7 +5,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable
 
-object Spark02_Acc {
+object Spark01_Bc {
 
   def main(args: Array[String]): Unit = {
     val sparConf = new SparkConf().setMaster("local").setAppName("WordCount")
