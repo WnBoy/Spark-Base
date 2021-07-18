@@ -228,11 +228,182 @@ Spark计算框架为了能够进行高并发和高吞吐的数据处理，封装
 
 ## 1 Rdd 基本概念
 
+### 1.2 什么是RDD
+
+RDD（Resilient Distributed Dataset）叫做弹性分布式数据集，是Spark中最基本的数据处理模型。代码中是一个抽象类，它代表一个弹性的、不可变、可分区、里面的元素可并行计算的集合。
+
+弹性
+
+⚫ 存储的弹性：内存与磁盘的自动切换；
+⚫ 容错的弹性：数据丢失可以自动恢复；
+⚫ 计算的弹性：计算出错重试机制；
+⚫ 分片的弹性：可根据需要重新分片。
+
+分布式：数据存储在大集群不同节点上 
+数据集：  RDD封装了计算逻辑，并不保存数据
+数据抽象： RDD是一个抽象类，需要子具体实现 
+不可变 ：RDD封装了计算逻辑，是不可以改变的， 想改变只能产生新的RDD，在新的RDD里面封装计算逻辑。
+可分区、并行计算
+
  - RDD是最小的计算单元
  - 首选位置：数据发送到哪个节点效率最优 
  - 移动数据不如移动计算
 
+### 1.3 核心属性
+
+```
+* Internally, each RDD is characterized by five main properties:
+*
+*  - A list of partitions
+*  - A function for computing each split
+*  - A list of dependencies on other RDDs
+*  - Optionally, a Partitioner for key-value RDDs (e.g. to say that the RDD is hash-partitioned)
+*  - Optionally, a list of preferred locations to compute each split on (e.g. block locations for
+*    an HDFS file)
+```
+
+#### 1.3.1 分区列表
+
+RDD 数据结构中存在分区列表，用于执行任务时并行计算，是实现分布式计算的重要属性。
+
+```scala
+/**
+ * Implemented by subclasses to return the set of partitions in this RDD. This method will only
+ * be called once, so it is safe to implement a time-consuming computation in it.
+ *
+ * The partitions in this array must satisfy the following property:
+ *   `rdd.partitions.zipWithIndex.forall { case (partition, index) => partition.index == index }`
+ */
+protected def getPartitions: Array[Partition]
+```
+
+#### 1.3.2 分区计算函数
+
+Spark 在计算时，是使用分区函数对每一个分区进行计算
+
+```scala
+/**
+ * :: DeveloperApi ::
+ * Implemented by subclasses to compute a given partition.
+ */
+@DeveloperApi
+def compute(split: Partition, context: TaskContext): Iterator[T]
+```
+
+#### 1.3.3 RDD 之间的依赖关系
+
+RDD 是计算模型的封装，当需求中需要将多个计算模型进行组合时，就需要将多个 RDD 建立依赖关系
+
+```scala
+/**
+ * Implemented by subclasses to return how this RDD depends on parent RDDs. This method will only
+ * be called once, so it is safe to implement a time-consuming computation in it.
+ */
+protected def getDependencies: Seq[Dependency[_]] = deps
+```
+
+#### 1.3.4 分区器（可选）
+
+当数据为 KV 类型数据时，可以通过设定分区器自定义数据的分区
+
+```scala
+/** Optionally overridden by subclasses to specify how they are partitioned. */
+@transient val partitioner: Option[Partitioner] = None
+```
+
+#### 1.3.5 首选位置（可选）
+
+计算数据时，可以根据计算节点的状态选择不同的节点位置进行计算
+
+```scala
+/**
+ * Optionally overridden by subclasses to specify placement preferences.
+ */
+protected def getPreferredLocations(split: Partition): Seq[String] = Nil
+```
+
+### 1.4 执行原理
+
+从计算的角度来讲，数据处理过程中需要计算资源（内存 & CPU）和计算模型（逻辑）。执行时，需要将计算资源和计算模型进行协调和整合。
+
+Spark 框架在执行时，先申请资源，然后将应用程序的数据处理逻辑分解成一个一个的计算任务。然后将任务发到已经分配资源的计算节点上, 按照指定的计算模型进行数据计算。最后得到计算结果。
+
+RDD 是 Spark 框架中用于数据处理的核心模型，接下来我们看看，在 Yarn 环境中，RDD 的工作原理:
+
+1)    启动 Yarn 集群环境
+
+![image-20210718174037914](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210718174037914.png)
+
+2)    Spark 通过申请资源创建调度节点和计算节点
+
+![image-20210718174108061](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210718174108061.png)
+
+3)    Spark 框架根据需求将计算逻辑根据分区划分成不同的任务
+
+![image-20210718174131011](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210718174131011.png)
+
+4)    调度节点将任务根据计算节点状态发送到对应的计算节点进行计算
+
+![image-20210718174201429](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210718174201429.png)
+
+从以上流程可以看出 RDD 在整个流程中主要用于将逻辑进行封装，并生成 Task 发送给Executor 节点执行计算，接下来我们就一起看看 Spark 框架中RDD 是具体是如何进行数据处理的。
+
+### 1.5 基础编程
+
+#### 1.5.1 RDD创建
+
+在 Spark 中创建RDD 的创建方式可以分为四种：
+
+- 从集合（内存）中创建 RDD
+
+从集合中创建RDD，[Spark ](https://www.iteblog.com/archives/tag/spark/)主要提供了两个方法：parallelize 和 makeRDD
+
+从底层代码实现来讲，makeRDD 方法其实就是parallelize 方法
+
+```scala
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife 
+  */
+object Spark01_Rdd_Memory {
+  def main(args: Array[String]): Unit = {
+    // 初始化环境
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("Rdd")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    // 创建RDD
+    val seq: Seq[Int] = Seq(1,2,3,4)
+
+    // 方式1
+    val rdd_01: RDD[Int] = sc.parallelize(seq)
+    // 方式2 ：底层还是调用方式1，推荐使用
+    val rdd_02: RDD[Int] = sc.makeRDD(seq)
+
+
+    rdd_01.foreach(println)
+    println("---------------")
+    rdd_02.foreach(println)
+
+    // 关闭资源
+    sc.stop()
+
+  }
+}
+```
+
+- 从外部存储（文件）创建RDD
+
+主要是通过一个RDD 运算完后，再产生新的RDD。详情请参考后续章节
+
+- 直接创建 RDD（new）
+
+使用 new 的方式直接构造RDD，一般由Spark 框架自身使用。
+
 ## 2 RDD的并行度与分区
+
+默认情况下，Spark 可以将一个作业切分多个任务后，发送给 Executor 节点并行计算，而能够并行计算的任务数量我们称之为并行度。这个数量可以在构建RDD 时指定。记住，这里的并行执行的任务数量，并不是指的切分任务的数量，不要混淆了
 
 1. 读取内存数据
 
