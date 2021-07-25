@@ -185,15 +185,379 @@ DataFrame其实是DataSet的特例，所以它们之间是可以互相转换的�
 
 ![image-20210721224307854](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210721224307854.png)
 
+## 2.6 IDEA开发SQL
 
+实际开发中，都是使用IDEA进行开发的。
 
+### 2.6.1 添加依赖
 
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.apache.spark</groupId>
+        <artifactId>spark-sql_2.12</artifactId>
+        <version>${sparkversion}</version>
+    </dependency>
+</dependencies>
+```
 
+### 2.6.2 代码实现
 
+```scala
+package com.xupt.spark.sql.demo
 
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
+/**
+  * @author Wnlife
+  *
+  *         RDD <=> DataSet <=> DataFrame  转换需要引入隐式转换规则，否则无法转换
+  */
+object Spark01_SparkSQL_Basic {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    //  RDD <=> DataSet <=> DataFrame  转换需要引入隐式转换规则，否则无法转换
+    // spark不是包名，是上下文环境对象名
+    import spark.implicits._
 
+    //  DataFrame
+    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    //    df.show()
+    //  DataFrame => SQL
+    //    df.createOrReplaceTempView("user")
+    spark.sql("select age from user").show()
 
+    //  DataFrame => DSL
+    //  在使用DataFrame时，如果涉及到转换操作，需要引入转换规则
+    //    df.select("age", "name").show()
+    //    df.select($"age" + 1).show()
+    //    df.select('age + 2).show()
 
+    // DataSet
+    val seq: Seq[Int] = Seq(1, 2, 3, 4, 5, 6)
+    val ds: Dataset[Int] = seq.toDS()
+    //    ds.show()
+
+    // 3. 三者的互相转换
+    //    rdd <=> DataFrame
+    //    val rdd1: RDD[(Int, String, Int)] = spark.sparkContext.makeRDD(List((1, "谢爽", 26), (2, "哇哇", 25)))
+    //    val df: DataFrame = rdd1.toDF("id", "name", "age")
+    //    df.show()
+    //    val rdd2: RDD[Row] = df.rdd
+
+    //  DataFrame <=> DataSet
+    //    val ds: Dataset[User] = df.as[User]
+    //    val df2: DataFrame = ds.toDF()
+
+    //  DataSet <=> rdd
+    //    val rdd3: RDD[User] = ds.rdd
+    //    val ds3: Dataset[User] = rdd1.map(line => User(line._1, line._2, line._3)).toDS()
+
+    spark.close()
+  }
+
+  case class User(id: Int, name: String, age: Int)
+
+}
+```
+
+## 2.7 用户自定义函数
+
+用户可以通过spark.udf功能添加自定义函数，实现自定义功能。
+
+### 2.7.1 UDF
+
+![image-20210725181135431](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725181135431.png)
+
+代码示例：
+
+```scala
+package com.xupt.spark.sql.demo
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
+
+/**
+  * @author Wnlife
+  *
+  *         RDD <=> DataSet <=> DataFrame  转换需要引入隐式转换规则，否则无法转换
+  */
+object Spark02_SparkSQL_Basic {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
+
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    //  RDD <=> DataSet <=> DataFrame  转换需要引入隐式转换规则，否则无法转换
+    // spark不是包名，是上下文环境对象名
+
+    //  DataFrame
+    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+
+    spark.udf.register("prefixName", (name: String) => {
+      "Name :" + name
+    })
+
+    df.createOrReplaceTempView("user")
+    spark.sql("select age, prefixName(name) from user").show()
+
+    spark.close()
+  }
+}
+```
+
+### 2.7.2 UDAF
+
+强类型的Dataset和弱类型的DataFrame都提供了相关的聚合函数， 如 count()，countDistinct()，avg()，max()，min()。除此之外，用户可以设定自己的自定义聚合函数。通过继承UserDefinedAggregateFunction来实现用户自定义弱类型聚合函数。从Spark3.0版本后，UserDefinedAggregateFunction已经不推荐使用了。可以统一采用强类型聚合函数Aggregator
+
+![image-20210725192216503](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725192216503.png)
+
+**原理：**
+
+![image-20210725192100075](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725192100075.png)
+
+**案例：计算平均年龄**
+
+1. UDAF-弱类型
+
+```scala
+package com.xupt.spark.sql.demo
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.expressions.{MutableAggregationBuffer, UserDefinedAggregateFunction}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+/**
+  * @author Wnlife
+  *
+  *         UDAF弱类型实现
+  */
+object Spark03_SparkSQL_UDAF {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
+
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    df.show()
+
+    spark.udf.register("myAvg", new MyAvgUDAF())
+    df.createOrReplaceTempView("user")
+    spark.sql("select myAvg(age) from user").show()
+
+    spark.close()
+  }
+
+  /*
+ 自定义聚合函数类：计算年龄的平均值
+ 1. 继承UserDefinedAggregateFunction
+ 2. 重写方法(8)
+ */
+  class MyAvgUDAF extends UserDefinedAggregateFunction {
+
+    // 输入数据的类型
+    override def inputSchema: StructType = {
+      StructType(Array(StructField("age", LongType)))
+    }
+
+    // 缓冲区数据的类型
+    override def bufferSchema: StructType = {
+      StructType(Array(StructField("total", LongType), StructField("count", LongType)))
+    }
+
+    // 结果计算的类型
+    override def dataType: DataType = LongType
+
+    // 函数是否是稳定的
+    override def deterministic: Boolean = true
+
+    // 缓冲区初始化
+    override def initialize(buffer: MutableAggregationBuffer): Unit = {
+      //      buffer(0)=0L
+      //      buffer(1)=0L
+
+      buffer.update(0, 0L)
+      buffer.update(1, 0L)
+
+    }
+
+    // 根据输入的值更新缓冲区数据
+    override def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
+      println(input.toString())
+      buffer.update(0, buffer.getLong(0) + input.getLong(0))
+      buffer.update(1, buffer.getLong(1) + 1)
+    }
+
+    // 缓冲区数据合并
+    override def merge(buffer1: MutableAggregationBuffer, buffer2: Row): Unit = {
+      buffer1.update(0, buffer1.getLong(0) + buffer2.getLong(0))
+      buffer1.update(1, buffer1.getLong(1) + buffer2.getLong(1))
+    }
+
+    // 计算最终结果
+    override def evaluate(buffer: Row): Any = {
+      buffer.getLong(0) / buffer.getLong(1)
+    }
+  }
+
+}
+```
+
+2. UDAF强类型实现
+
+**Spark3.0版本可以采用强类型的Aggregator方式代替UserDefinedAggregateFunction**
+
+```scala
+package com.xupt.spark.sql.demo
+
+import org.apache.spark.sql.{DataFrame, Encoder, Encoders, SparkSession, functions}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.expressions.Aggregator
+
+/**
+  * @author Wnlife
+  *
+  *         UDAF强类型实现--Spark3.0增加的
+  */
+object Spark03_SparkSQL_UDAF1 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
+
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    df.show()
+
+    spark.udf.register("myAvg", functions.udaf(new MyAvgUDAF()))
+    df.createOrReplaceTempView("user")
+    spark.sql("select myAvg(age) from user").show()
+
+    spark.close()
+  }
+
+  /*
+   自定义聚合函数类：计算年龄的平均值
+   1. 继承org.apache.spark.sql.expressions.Aggregator, 定义泛型
+       IN : 输入的数据类型 Long
+       BUF : 缓冲区的数据类型 Buff
+       OUT : 输出的数据类型 Long
+   2. 重写方法(6)
+ */
+  case class Buf(var total: Long, var count: Long)
+
+  class MyAvgUDAF extends Aggregator[Long, Buf, Long] {
+
+    // 初始值
+    override def zero: Buf = {
+      Buf(0L, 0L)
+    }
+
+    // 根据输入值更新Buffer
+    override def reduce(buf: Buf, a: Long): Buf = {
+      buf.total = buf.total + a
+      buf.count = buf.count + 1
+      buf
+    }
+
+    // 合并缓冲区
+    override def merge(buf1: Buf, buf2: Buf): Buf = {
+      buf1.total = buf1.total + buf2.total
+      buf1.count = buf1.count + buf2.count
+      buf1
+    }
+
+    // 最后的计算结果
+    override def finish(buf: Buf): Long = buf.total / buf.count
+
+    override def bufferEncoder: Encoder[Buf] = Encoders.product
+
+    override def outputEncoder: Encoder[Long] = Encoders.scalaLong
+  }
+
+}
+```
+
+3. 早期的UDAF强类型聚合函数
+
+早期版本中，spark不能在sql中使用强类型UDAF操作，早期的UDAF强类型聚合函数使用DSL语法操作
+
+```scala
+package com.xupt.spark.sql.demo
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.expressions.Aggregator
+import org.apache.spark.sql._
+
+/**
+  * @author Wnlife
+  *
+  *         UDAF强类型实现--spark3.0以前
+  */
+object Spark03_SparkSQL_UDAF2 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
+
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    df.show()
+
+    // 早期版本中，spark不能在sql中使用强类型UDAF操作
+    // SQL & DSL
+    // 早期的UDAF强类型聚合函数使用DSL语法操作
+    val ds: Dataset[User] = df.as[User]
+
+    // 将UDAF函数转换为查询的列对象
+    val udafCol: TypedColumn[User, Long] = new MyAvgUDAF().toColumn
+
+    ds.select(udafCol)
+
+    spark.close()
+  }
+
+  /*
+   自定义聚合函数类：计算年龄的平均值
+   1. 继承org.apache.spark.sql.expressions.Aggregator, 定义泛型
+       IN : 输入的数据类型 Long
+       BUF : 缓冲区的数据类型 Buff
+       OUT : 输出的数据类型 Long
+   2. 重写方法(6)
+ */
+
+  case class User(id: Int, name: String, age: Int)
+
+  case class Buf(var total: Long, var count: Long)
+
+  class MyAvgUDAF extends Aggregator[User, Buf, Long] {
+
+    // 初始值
+    override def zero: Buf = {
+      Buf(0L, 0L)
+    }
+
+    // 根据输入值更新Buffer
+    override def reduce(buf: Buf, a: User): Buf = {
+      buf.total = buf.total + a.age
+      buf.count = buf.count + 1
+      buf
+    }
+
+    // 合并缓冲区
+    override def merge(buf1: Buf, buf2: Buf): Buf = {
+      buf1.total = buf1.total + buf2.total
+      buf1.count = buf1.count + buf2.count
+      buf1
+    }
+
+    // 最后的计算结果
+    override def finish(buf: Buf): Long = buf.total / buf.count
+
+    // 缓冲区的编码操作
+    override def bufferEncoder: Encoder[Buf] = Encoders.product
+
+    // 输出的编码操作
+    override def outputEncoder: Encoder[Long] = Encoders.scalaLong
+  }
+}
+```
 
