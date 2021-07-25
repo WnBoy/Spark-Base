@@ -207,6 +207,7 @@ DataFrame其实是DataSet的特例，所以它们之间是可以互相转换的�
 package com.xupt.spark.sql.demo
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 /**
@@ -224,7 +225,8 @@ object Spark01_SparkSQL_Basic {
     import spark.implicits._
 
     //  DataFrame
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     //    df.show()
     //  DataFrame => SQL
     //    df.createOrReplaceTempView("user")
@@ -243,14 +245,14 @@ object Spark01_SparkSQL_Basic {
 
     // 3. 三者的互相转换
     //    rdd <=> DataFrame
-    //    val rdd1: RDD[(Int, String, Int)] = spark.sparkContext.makeRDD(List((1, "谢爽", 26), (2, "哇哇", 25)))
-    //    val df: DataFrame = rdd1.toDF("id", "name", "age")
+    //        val rdd1: RDD[(Int, String, Int)] = spark.sparkContext.makeRDD(List((1, "谢爽", 26), (2, "哇哇", 25)))
+    //        val df: DataFrame = rdd1.toDF("id", "name", "age")
     //    df.show()
     //    val rdd2: RDD[Row] = df.rdd
 
     //  DataFrame <=> DataSet
-    //    val ds: Dataset[User] = df.as[User]
-    //    val df2: DataFrame = ds.toDF()
+    //        val ds: Dataset[User] = df.as[User]
+    //        val df2: DataFrame = ds.toDF()
 
     //  DataSet <=> rdd
     //    val rdd3: RDD[User] = ds.rdd
@@ -262,6 +264,7 @@ object Spark01_SparkSQL_Basic {
   case class User(id: Int, name: String, age: Int)
 
 }
+
 ```
 
 ## 2.7 用户自定义函数
@@ -278,6 +281,7 @@ object Spark01_SparkSQL_Basic {
 package com.xupt.spark.sql.demo
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -285,7 +289,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
   *
   *         RDD <=> DataSet <=> DataFrame  转换需要引入隐式转换规则，否则无法转换
   */
-object Spark02_SparkSQL_Basic {
+object Spark02_SparkSQL_UDF {
   def main(args: Array[String]): Unit = {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
@@ -294,7 +298,8 @@ object Spark02_SparkSQL_Basic {
     // spark不是包名，是上下文环境对象名
 
     //  DataFrame
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
 
     spark.udf.register("prefixName", (name: String) => {
       "Name :" + name
@@ -306,6 +311,7 @@ object Spark02_SparkSQL_Basic {
     spark.close()
   }
 }
+
 ```
 
 ### 2.7.2 UDAF
@@ -340,7 +346,8 @@ object Spark03_SparkSQL_UDAF {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     spark.udf.register("myAvg", new MyAvgUDAF())
@@ -403,6 +410,7 @@ object Spark03_SparkSQL_UDAF {
   }
 
 }
+
 ```
 
 2. UDAF强类型实现
@@ -412,9 +420,10 @@ object Spark03_SparkSQL_UDAF {
 ```scala
 package com.xupt.spark.sql.demo
 
-import org.apache.spark.sql.{DataFrame, Encoder, Encoders, SparkSession, functions}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.expressions.Aggregator
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
+import org.apache.spark.sql._
 
 /**
   * @author Wnlife
@@ -424,9 +433,9 @@ import org.apache.spark.sql.expressions.Aggregator
 object Spark03_SparkSQL_UDAF1 {
   def main(args: Array[String]): Unit = {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
-
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     spark.udf.register("myAvg", functions.udaf(new MyAvgUDAF()))
@@ -470,12 +479,15 @@ object Spark03_SparkSQL_UDAF1 {
     // 最后的计算结果
     override def finish(buf: Buf): Long = buf.total / buf.count
 
+    // 缓冲区的编码操作
     override def bufferEncoder: Encoder[Buf] = Encoders.product
 
+    // 输出的编码操作
     override def outputEncoder: Encoder[Long] = Encoders.scalaLong
   }
 
 }
+
 ```
 
 3. 早期的UDAF强类型聚合函数
@@ -488,6 +500,7 @@ package com.xupt.spark.sql.demo
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.expressions.Aggregator
 import org.apache.spark.sql._
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 
 /**
   * @author Wnlife
@@ -499,7 +512,9 @@ object Spark03_SparkSQL_UDAF2 {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    import spark.implicits._
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     // 早期版本中，spark不能在sql中使用强类型UDAF操作
@@ -524,7 +539,7 @@ object Spark03_SparkSQL_UDAF2 {
    2. 重写方法(6)
  */
 
-  case class User(id: Int, name: String, age: Int)
+  case class User(name: String, age: Long)
 
   case class Buf(var total: Long, var count: Long)
 
@@ -558,6 +573,66 @@ object Spark03_SparkSQL_UDAF2 {
     // 输出的编码操作
     override def outputEncoder: Encoder[Long] = Encoders.scalaLong
   }
+
+}
+
+```
+
+## 2.8 数据加载和保存
+
+### 2.8.1 通用的加载和保存方式
+
+SparkSQL提供了通用的保存数据和数据加载的方式。这里的通用指的是使用相同的API，根据不同的参数读取和保存不同格式的数据，SparkSQL默认读取和保存的文件格式为parquet
+
+1. **加载数据**
+
+![image-20210725221309975](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725221309975.png)
+
+2. 保存数据
+
+![image-20210725221345198](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725221345198.png)
+
+![image-20210725221549534](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725221549534.png)
+
+```scala
+package com.xupt.spark.sql.demo
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql._
+
+/**
+  * @author Wnlife
+  *
+  */
+object Spark04_SparkSQL_CSV {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
+
+    val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val df: DataFrame = spark.read.option("header", true).option("seq", ",").option("inferSchema", "true").csv("datas/csv/1.csv")
+    df.printSchema()
+    df.show()
+
+    df.write.mode(SaveMode.Append).csv("output")
+
+    spark.close()
+  }
 }
 ```
 
+### 2.8.2 Parquet
+
+Spark SQL的默认数据源为Parquet格式。Parquet是一种能够有效存储嵌套数据的列式存储格式。
+数据源为Parquet文件时，Spark SQL可以方便的执行所有的操作，不需要使用format。修改配置项`spark.sql.sources.default`，可修改默认数据源格式。
+
+![image-20210725222620800](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725222620800.png)
+
+### 2.8.3 JSON
+
+![image-20210725222700331](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725222700331.png)
+
+![image-20210725222720079](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725222720079.png)
+
+### 2.8.4 CSV
+
+![image-20210725222752892](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725222752892.png)

@@ -1,6 +1,7 @@
 package com.xupt.spark.sql.demo
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -17,7 +18,8 @@ object Spark02_SparkSQL_UDF {
     // spark不是包名，是上下文环境对象名
 
     //  DataFrame
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
 
     spark.udf.register("prefixName", (name: String) => {
       "Name :" + name

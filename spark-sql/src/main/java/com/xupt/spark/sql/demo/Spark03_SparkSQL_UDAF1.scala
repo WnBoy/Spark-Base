@@ -1,8 +1,9 @@
 package com.xupt.spark.sql.demo
 
-import org.apache.spark.sql.{DataFrame, Encoder, Encoders, SparkSession, functions}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.expressions.Aggregator
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
+import org.apache.spark.sql._
 
 /**
   * @author Wnlife
@@ -12,9 +13,9 @@ import org.apache.spark.sql.expressions.Aggregator
 object Spark03_SparkSQL_UDAF1 {
   def main(args: Array[String]): Unit = {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
-
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     spark.udf.register("myAvg", functions.udaf(new MyAvgUDAF()))

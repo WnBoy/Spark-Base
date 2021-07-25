@@ -3,6 +3,7 @@ package com.xupt.spark.sql.demo
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.expressions.Aggregator
 import org.apache.spark.sql._
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 
 /**
   * @author Wnlife
@@ -14,7 +15,9 @@ object Spark03_SparkSQL_UDAF2 {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    import spark.implicits._
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     // 早期版本中，spark不能在sql中使用强类型UDAF操作
@@ -39,7 +42,7 @@ object Spark03_SparkSQL_UDAF2 {
    2. 重写方法(6)
  */
 
-  case class User(id: Int, name: String, age: Int)
+  case class User(name: String, age: Long)
 
   case class Buf(var total: Long, var count: Long)
 

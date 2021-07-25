@@ -1,6 +1,7 @@
 package com.xupt.spark.sql.demo
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 /**
@@ -18,7 +19,8 @@ object Spark01_SparkSQL_Basic {
     import spark.implicits._
 
     //  DataFrame
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     //    df.show()
     //  DataFrame => SQL
     //    df.createOrReplaceTempView("user")
@@ -37,14 +39,14 @@ object Spark01_SparkSQL_Basic {
 
     // 3. 三者的互相转换
     //    rdd <=> DataFrame
-//        val rdd1: RDD[(Int, String, Int)] = spark.sparkContext.makeRDD(List((1, "谢爽", 26), (2, "哇哇", 25)))
-//        val df: DataFrame = rdd1.toDF("id", "name", "age")
+    //        val rdd1: RDD[(Int, String, Int)] = spark.sparkContext.makeRDD(List((1, "谢爽", 26), (2, "哇哇", 25)))
+    //        val df: DataFrame = rdd1.toDF("id", "name", "age")
     //    df.show()
     //    val rdd2: RDD[Row] = df.rdd
 
     //  DataFrame <=> DataSet
-//        val ds: Dataset[User] = df.as[User]
-//        val df2: DataFrame = ds.toDF()
+    //        val ds: Dataset[User] = df.as[User]
+    //        val df2: DataFrame = ds.toDF()
 
     //  DataSet <=> rdd
     //    val rdd3: RDD[User] = ds.rdd

@@ -15,7 +15,8 @@ object Spark03_SparkSQL_UDAF {
     val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL")
 
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
-    val df: DataFrame = spark.read.option("header", true).csv("datas/csv/1.csv")
+    val structType: StructType = StructType(Array(StructField("name", StringType), StructField("age", LongType)))
+    val df: DataFrame = spark.read.option("header", true).schema(structType).csv("datas/csv/1.csv")
     df.show()
 
     spark.udf.register("myAvg", new MyAvgUDAF())
