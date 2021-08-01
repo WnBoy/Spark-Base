@@ -636,3 +636,109 @@ Spark SQL的默认数据源为Parquet格式。Parquet是一种能够有效存储
 ### 2.8.4 CSV
 
 ![image-20210725222752892](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210725222752892.png)
+
+### 2.8.5MySQL
+
+Spark SQL可以通过JDBC从关系型数据库中读取数据的方式创建DataFrame，通过对DataFrame一系列的计算后，还可以将数据再写回关系型数据库中。如果使用spark-shell操作，可在启动shell时指定相关的数据库驱动路径或者将相关的数据库驱动放到spark的类路径下。
+
+![image-20210801155121188](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155121188.png)
+
+我们这里只演示在Idea中通过JDBC对Mysql进行操作
+
+![image-20210801155158275](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155158275.png)
+
+![image-20210801155221347](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155221347.png)
+
+![image-20210801155304024](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155304024.png)
+
+![image-20210801155324154](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155324154.png)
+
+### 2.8.6 Hive
+
+Apache Hive 是 Hadoop 上的 SQL 引擎，Spark SQL编译时可以包含 Hive 支持，也可以不包含。包含 Hive 支持的 Spark SQL 可以支持 Hive 表访问、UDF (用户自定义函数)以及 Hive 查询语言(HiveQL/HQL)等。需要强调的一点是，如果要在 Spark SQL 中包含Hive 的库，并不需要事先安装 Hive。一般来说，最好还是在编译Spark SQL时引入Hive支持，这样就可以使用这些特性了。如果你下载的是二进制版本的 Spark，它应该已经在编译时添加了 Hive 支持。
+
+若要把 Spark SQL 连接到一个部署好的 Hive 上，你必须把 hive-site.xml 复制到 Spark的配置文件目录中($SPARK_HOME/conf)。即使没有部署好 Hive，Spark SQL 也可以运行。 需要注意的是，如果你没有部署好Hive，Spark SQL 会在当前的工作目录中创建出自己的 Hive 元数据仓库，叫作 metastore_db。此外，如果你尝试使用 HiveQL 中的 CREATE TABLE (并非 CREATE EXTERNAL TABLE)语句来创建表，这些表会被放在你默认的文件系统中的 /user/hive/warehouse 目录中(如果你的 classpath 中有配好的 hdfs-site.xml，默认的文件系统就是 HDFS，否则就是本地文件系统)。
+spark-shell默认是Hive支持的；代码中是默认不支持的，需要手动指定（加一个参数即可）。
+
+1）内嵌的HIVE
+
+如果使用 Spark 内嵌的 Hive, 则什么都不用做, 直接使用即可.
+Hive 的元数据存储在 derby 中, 默认仓库地址:$SPARK_HOME/spark-warehouse
+
+![image-20210801155713039](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155713039.png)
+
+向表加载本地数据
+
+![image-20210801155822493](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155822493.png)
+
+![image-20210801155857383](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801155857383.png)
+
+2）外部的HIVE
+
+如果想连接外部已经部署好的Hive，需要通过以下几个步骤：
+➢ Spark要接管Hive需要把hive-site.xml拷贝到conf/目录下
+➢ 把Mysql的驱动copy到jars/目录下
+➢ 如果访问不到hdfs，则需要把core-site.xml和hdfs-site.xml拷贝到conf/目录下
+➢ 重启spark-shell
+
+![image-20210801160025997](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801160025997.png)
+
+3）运行Spark SQL CLI
+Spark SQL CLI可以很方便的在本地运行Hive元数据服务以及从命令行执行查询任务。在Spark目录下执行如下命令启动Spark SQL CLI，直接执行SQL语句，类似一Hive窗口
+
+bin/spark-sql
+
+4）运行Spark beeline
+Spark Thrift Server是Spark社区基于HiveServer2实现的一个Thrift服务。旨在无缝兼容HiveServer2。因为Spark Thrift Server的接口和协议都和HiveServer2完全一致，因此我们部署好Spark Thrift Server后，可以直接使用hive的beeline访问Spark Thrift Server执行相关语句。Spark Thrift Server的目的也只是取代HiveServer2，因此它依旧可以和Hive Metastore进行交互，获取到hive的元数据。
+如果想连接Thrift Server，需要通过以下几个步骤：
+➢ Spark要接管Hive需要把hive-site.xml拷贝到conf/目录下
+➢ 把Mysql的驱动copy到jars/目录下
+➢ 如果访问不到hdfs，则需要把core-site.xml和hdfs-site.xml拷贝到conf/目录下
+➢ 启动Thrift Server
+
+![image-20210801160215159](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801160215159.png)
+
+5）代码操作Hive
+
+1）导入依赖
+
+![image-20210801160322025](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801160322025.png)
+
+2）将hive-site.xml文件拷贝到项目的resources目录中，代码实现
+
+![image-20210801160438040](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210801160438040.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
