@@ -392,13 +392,95 @@ DStream 上的操作与 RDD 的类似，分为Transformations（转换）和Outp
 
 ## 4.1 无状态转化操作
 
+无状态转化操作就是把简单的RDD转化操作应用到每个批次上，也就是转化DStream中的每一个RDD。部分无状态转化操作列在了下表中。注意，针对键值对的DStream转化操作(比如 reduceByKey())要添加import StreamingContext._才能在Scala中使用。
 
+![image-20210815145538564](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210815145538564.png)
 
+需要记住的是，尽管这些函数看起来像作用在整个流上一样，但事实上每个DStream在内部是由许多RDD（批次）组成，且无状态转化操作是分别应用到每个RDD上的。
+例如：reduceByKey()会归约每个时间区间中的数据，但不会归约不同区间之间的数据。
 
+### 4.1.1 Transform
 
+```scala
+package com.xupt.streaming
 
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
 
+object SparkStreaming06_State_Transform {
 
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+
+        // transform方法可以将底层RDD获取到后进行操作
+        // 1. DStream功能不完善
+        // 2. 需要代码周期性的执行
+
+        // Code : Driver端
+        val newDS: DStream[String] = lines.transform(
+            rdd => {
+                // Code : Driver端，（周期性执行）
+                rdd.map(
+                    str => {
+                        // Code : Executor端
+                        str
+                    }
+                )
+            }
+        )
+        // Code : Driver端
+        val newDS1: DStream[String] = lines.map(
+            data => {
+                // Code : Executor端
+                data
+            }
+        )
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+}
+```
+
+### 4.1.2 Join
+
+![image-20210815152135524](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210815152135524.png)
+
+```scala
+package com.xupt.streaming
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+object SparkStreaming06_State_Join {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(5))
+
+        val data9999 = ssc.socketTextStream("localhost", 9999)
+        val data8888 = ssc.socketTextStream("localhost", 8888)
+
+        val map9999: DStream[(String, Int)] = data9999.map((_,9))
+        val map8888: DStream[(String, Int)] = data8888.map((_,8))
+
+        // 所谓的DStream的Join操作，其实就是两个RDD的join
+        val joinDS: DStream[(String, (Int, Int))] = map9999.join(map8888)
+
+        joinDS.print()
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+}
+```
 
 ## 4.2 有状态转换
 
@@ -466,3 +548,280 @@ object SparkStreaming05_State {
 ```
 
 ![image-20210808212311198](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210808212311198.png)
+
+### 4.2.2 WindowOperations
+
+Window Operations可以设置窗口的大小和滑动窗口的间隔来动态的获取当前Steaming的允许状态。所有基于窗口的操作都需要两个参数，分别为窗口时长以及滑动步长。
+
+- 窗口时长：计算内容的时间范围；
+- 滑动步长：隔多久触发一次计算。
+
+==注意：这两者都必须为采集周期大小的整数倍==
+
+
+
+```scala
+package com.xupt.streaming
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+object SparkStreaming06_State_Window {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+        val wordToOne = lines.map((_,1))
+
+        // 窗口的范围应该是采集周期的整数倍
+        // 窗口可以滑动的，但是默认情况下，一个采集周期进行滑动
+        // 这样的话，可能会出现重复数据的计算，为了避免这种情况，可以改变滑动的滑动（步长）
+        val windowDS: DStream[(String, Int)] = wordToOne.window(Seconds(6), Seconds(6))
+
+        val wordToCount = windowDS.reduceByKey(_+_)
+
+        wordToCount.print()
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+}
+```
+
+关于Window的操作还有如下方法：
+（1）window(windowLength, slideInterval): 基于对源DStream窗化的批次进行计算返回一个新的Dstream；
+（2）countByWindow(windowLength, slideInterval): 返回一个滑动窗口计数流中的元素个数；
+（3）reduceByWindow(func, windowLength, slideInterval): 通过使用自定义函数整合滑动区间流元素来创建一个新的单元素流；
+（4）reduceByKeyAndWindow(func, windowLength, slideInterval, [numTasks]): 当在一个(K,V)对的DStream上调用此函数，会返回一个新(K,V)对的DStream，此处通过对滑动窗口中批次数据使用reduce函数来整合每个key的value值。
+（5）reduceByKeyAndWindow(func, invFunc, windowLength, slideInterval, [numTasks]): 这个函数是上述函数的变化版本，每个窗口的reduce值都是通过用前一个窗的reduce值来递增计算。通过reduce进入到滑动窗口数据并”反向reduce”离开窗口的旧数据来实现这个操作。一个例子是随着窗口滑动对keys的“加”“减”计数。通过前边介绍可以想到，这个函数只适用于”可逆的reduce函数”，也就是这些reduce函数有相应的”反reduce”函数(以参数invFunc形式传入)。如前述函数，reduce任务的数量通过可选参数来配置。
+
+```scala
+package com.xupt.streaming
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+object SparkStreaming06_State_Window1 {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+        ssc.checkpoint("cp")
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+        val wordToOne = lines.map((_,1))
+
+        // reduceByKeyAndWindow : 当窗口范围比较大，但是滑动幅度比较小，那么可以采用增加数据和删除数据的方式
+        // 无需重复计算，提升性能。
+        val windowDS: DStream[(String, Int)] =
+            wordToOne.reduceByKeyAndWindow(
+                (x:Int, y:Int) => { x + y},
+                (x:Int, y:Int) => {x - y},
+                Seconds(9), Seconds(3))
+
+        windowDS.print()
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+}
+```
+
+![image-20210815155128331](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210815155128331.png)
+
+# 5 DStream输出
+
+输出操作指定了对流数据经转化操作得到的数据所要执行的操作(例如把结果推入外部数据库或输出到屏幕上)。与RDD中的惰性求值类似，如果一个DStream及其派生出的DStream都没有被执行输出操作，那么这些DStream就都不会被求值。如果StreamingContext中没有设定输出操作，整个context就都不会启动。
+输出操作如下：
+
+➢ print()：在运行流程序的驱动结点上打印DStream中每一批次数据的最开始10个元素。这用于开发和调试。在Python API中，同样的操作叫print()。
+➢ saveAsTextFiles(prefix, [suffix])：以text文件形式存储这个DStream的内容。每一批次的存储文件名基于参数中的prefix和suffix。”prefix-Time_IN_MS[.suffix]”。
+➢ saveAsObjectFiles(prefix, [suffix])：以Java对象序列化的方式将Stream中的数据保存为 SequenceFiles . 每一批次的存储文件名基于参数中的为"prefix-TIME_IN_MS[.suffix]". Python中目前不可用。
+➢ saveAsHadoopFiles(prefix, [suffix])：将Stream中的数据保存为 Hadoop files. 每一批次的存储文件名基于参数中的为"prefix-TIME_IN_MS[.suffix]"。Python API 中目前不可用。
+➢ foreachRDD(func)：这是最通用的输出操作，即将函数 func 用于产生于 stream的每一个RDD。其中参数传入的函数func应该实现将每一个RDD中数据推送到外部系统，如将RDD存入文件或者通过网络将其写入数据库。
+
+通用的输出操作foreachRDD()，它用来对DStream中的RDD运行任意计算。这和transform() 有些类似，都可以让我们访问任意RDD。在foreachRDD()中，可以重用我们在Spark中实现的所有行动操作。比如，常见的用例之一是把数据写到诸如MySQL的外部数据库中。
+注意：
+1) 连接不能写在driver层面（序列化）
+2) 如果写在foreach则每个RDD中的每一条数据都创建，得不偿失；
+3) 增加foreachPartition，在分区创建（获取）。
+
+```scala
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+object SparkStreaming07_Output {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+        ssc.checkpoint("cp")
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+        val wordToOne = lines.map((_,1))
+
+        val windowDS: DStream[(String, Int)] =
+            wordToOne.reduceByKeyAndWindow(
+                (x:Int, y:Int) => { x + y},
+                (x:Int, y:Int) => {x - y},
+                Seconds(9), Seconds(3))
+        // SparkStreaming如何没有输出操作，那么会提示错误
+        //windowDS.print()
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+
+}
+```
+
+```scala
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+object SparkStreaming07_Output1 {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+        ssc.checkpoint("cp")
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+        val wordToOne = lines.map((_,1))
+        
+        val windowDS: DStream[(String, Int)] =
+            wordToOne.reduceByKeyAndWindow(
+                (x:Int, y:Int) => { x + y},
+                (x:Int, y:Int) => {x - y},
+                Seconds(9), Seconds(3))
+
+        // foreachRDD不会出现时间戳
+        windowDS.foreachRDD(
+            rdd => {
+
+            }
+        )
+
+        ssc.start()
+        ssc.awaitTermination()
+    }
+
+}
+```
+
+# 6 优雅关闭
+
+![image-20210815162128558](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210815162128558.png)
+
+```scala
+package com.xupt.streaming
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.{Seconds, StreamingContext, StreamingContextState}
+
+object SparkStreaming08_Close {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+        val ssc = new StreamingContext(sparkConf, Seconds(3))
+
+        val lines = ssc.socketTextStream("localhost", 9999)
+        val wordToOne = lines.map((_,1))
+
+        wordToOne.print()
+
+        ssc.start()
+
+        // 如果想要关闭采集器，那么需要创建新的线程
+        // 而且需要在第三方程序中增加关闭状态
+        new Thread(
+            new Runnable {
+                override def run(): Unit = {
+                    // 优雅地关闭
+                    // 计算节点不在接收新的数据，而是将现有的数据处理完毕，然后关闭
+                    // Mysql : Table(stopSpark) => Row => data
+                    // Redis : Data（K-V）
+                    // ZK    : /stopSpark
+                    // HDFS  : /stopSpark
+                    /*
+                    while ( true ) {
+                        if (true) {
+                            // 获取SparkStreaming状态
+                            val state: StreamingContextState = ssc.getState()
+                            if ( state == StreamingContextState.ACTIVE ) {
+                                ssc.stop(true, true)
+                            }
+                        }
+                        Thread.sleep(5000)
+                    }
+                     */
+
+                    Thread.sleep(5000)
+                    val state: StreamingContextState = ssc.getState()
+                    if ( state == StreamingContextState.ACTIVE ) {
+                        ssc.stop(true, true)
+                    }
+                    System.exit(0)
+                }
+            }
+        ).start()
+
+        ssc.awaitTermination() // block 阻塞main线程
+    }
+}
+```
+
+从检查点恢复数据
+
+```scala
+package com.xupt.streaming
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.{Seconds, StreamingContext, StreamingContextState}
+
+object SparkStreaming09_Resume {
+
+  def main(args: Array[String]): Unit = {
+
+    val ssc = StreamingContext.getActiveOrCreate("cp", () => {
+      val sparkConf = new SparkConf().setMaster("local[*]").setAppName("SparkStreaming")
+      val ssc = new StreamingContext(sparkConf, Seconds(3))
+      val lines = ssc.socketTextStream("localhost", 9999)
+      val wordToOne = lines.map((_, 1))
+      wordToOne.print()
+      ssc
+    })
+
+    ssc.checkpoint("cp")
+    new Thread(
+      () => {
+        Thread.sleep(5000)
+        val state: StreamingContextState = ssc.getState()
+        if (state == StreamingContextState.ACTIVE) {
+          ssc.stop(true, true)
+        }
+        System.exit(0)
+      }
+    ).start()
+    ssc.start()
+    ssc.awaitTermination() // block 阻塞main线程
+  }
+}
+```
+
+
+
+
+
