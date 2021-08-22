@@ -12,9 +12,107 @@
 
 
 
-# WordCount
+# 1 Spark概述
 
-## 实现一
+## 1.1Spark是什么
+
+Spark是一种基于内存的快速、通用、可扩展的大数据分析计算引擎。
+
+## 1.2 Hadoop and Spark
+
+在之前的学习中，Hadoop的MapReduce是大家广为熟知的计算框架，那为什么咱们还要学习新的计算框架Spark呢，这里就不得不提到Spark和Hadoop的关系。
+
+首先从时间节点上来看:
+➢ Hadoop
+⚫ 2006年1月，Doug Cutting加入Yahoo，领导Hadoop的开发
+⚫ 2008年1月，Hadoop成为Apache顶级项目
+⚫ 2011年1.0正式发布
+⚫ 2012年3月稳定版发布
+⚫ 2013年10月发布2.X (Yarn)版本
+
+➢ Spark
+⚫ 2009年，Spark诞生于伯克利大学的AMPLab实验室
+⚫ 2010年，伯克利大学正式开源了Spark项目
+⚫ 2013年6月，Spark成为了Apache基金会下的项目
+⚫ 2014年2月，Spark以飞快的速度成为了Apache的顶级项目
+⚫ 2015年至今，Spark变得愈发火爆，大量的国内公司开始重点部署或者使用Spark
+
+然后我们再从功能上来看:
+➢ Hadoop
+
+⚫ Hadoop是由java语言编写的，在分布式服务器集群上存储海量数据并运行分布式分析应用的开源框架
+⚫ 作为Hadoop分布式文件系统，HDFS处于Hadoop生态圈的最下层，存储着所有的数据，支持着Hadoop的所有服务。它的理论基础源于Google的TheGoogleFileSystem这篇论文，它是GFS的开源实现。
+⚫ MapReduce是一种编程模型，Hadoop根据Google的MapReduce论文将其实现，作为Hadoop的分布式计算模型，是Hadoop的核心。基于这个框架，分布式并行程序的编写变得异常简单。综合了HDFS的分布式存储和MapReduce的分布式计算，Hadoop在处理海量数据时，性能横向扩展变得非常容易。
+⚫ HBase是对Google的Bigtable的开源实现，但又和Bigtable存在许多不同之处。HBase是一个基于HDFS的分布式数据库，擅长实时地随机读/写超大规模数据集。它也是Hadoop非常重要的组件。
+
+➢ Spark
+⚫ Spark是一种由Scala语言开发的快速、通用、可扩展的大数据分析引擎
+⚫ Spark Core中提供了Spark最基础与最核心的功能
+⚫ Spark SQL是Spark用来操作结构化数据的组件。通过Spark SQL，用户可以使用SQL或者Apache Hive版本的SQL方言（HQL）来查询数据。
+⚫ Spark Streaming是Spark平台上针对实时数据进行流式计算的组件，提供了丰富的处理数据流的API。
+由上面的信息可以获知，Spark出现的时间相对较晚，并且主要功能主要是用于数据计算，所以其实Spark一直被认为是Hadoop 框架的升级版。
+
+## 1.3 Spark or Hadoop
+
+Hadoop的MR框架和Spark框架都是数据处理框架，那么我们在使用时如何选择呢？
+⚫ Hadoop MapReduce由于其设计初衷并不是为了满足循环迭代式数据流处理，因此在多并行运行的数据可复用场景（如：机器学习、图挖掘算法、交互式数据挖掘算法）中存在诸多计算效率等问题。所以Spark应运而生，Spark就是在传统的MapReduce 计算框架的基础上，利用其计算过程的优化，从而大大加快了数据分析、挖掘的运行和读写速度，并将计算单元缩小到更适合并行计算和重复使用的RDD计算模型。
+
+⚫ 机器学习中ALS、凸优化梯度下降等。这些都需要基于数据集或者数据集的衍生数据反复查询反复操作。MR这种模式不太合适，即使多MR串行处理，性能和时间也是一个问题。数据的共享依赖于磁盘。另外一种是交互式数据挖掘，MR显然不擅长。而Spark所基于的scala语言恰恰擅长函数的处理。
+⚫ Spark是一个分布式数据快速分析项目。它的核心技术是弹性分布式数据集（Resilient Distributed Datasets），提供了比MapReduce丰富的模型，可以快速在内存中对数据集进行多次迭代，来支持复杂的数据挖掘算法和图形计算算法。
+⚫ Spark和Hadoop的根本差异是多个作业之间的数据通信问题 : Spark多个作业之间数据通信是基于内存，而Hadoop是基于磁盘。
+
+⚫ Spark Task的启动时间快。Spark采用fork线程的方式，而Hadoop采用创建新的进程的方式。
+⚫ Spark只有在shuffle的时候将数据写入磁盘，而Hadoop中多个MR作业之间的数据交互都要依赖于磁盘交互
+⚫ Spark的缓存机制比HDFS的缓存机制高效。
+经过上面的比较，我们可以看出在绝大多数的数据计算场景中，Spark确实会比MapReduce更有优势。但是Spark是基于内存的，所以在实际的生产环境中，由于内存的限制，可能会由于内存资源不够导致Job执行失败，此时，MapReduce其实是一个更好的选择，所以Spark并不能完全替代MR。
+
+## 1.4 Spark核心模块
+
+![image-20210822150649646](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822150649646.png)
+
+
+
+
+
+➢ Spark Core
+Spark Core中提供了Spark最基础与最核心的功能，Spark其他的功能如：Spark SQL，Spark Streaming，GraphX, MLlib都是在Spark Core的基础上进行扩展的
+➢ Spark SQL
+Spark SQL是Spark用来操作结构化数据的组件。通过Spark SQL，用户可以使用SQL或者Apache Hive版本的SQL方言（HQL）来查询数据。
+➢ Spark Streaming
+Spark Streaming是Spark平台上针对实时数据进行流式计算的组件，提供了丰富的处理数据流的API。
+
+➢ Spark MLlib
+MLlib是Spark提供的一个机器学习算法库。MLlib不仅提供了模型评估、数据导入等额外的功能，还提供了一些更底层的机器学习原语。
+➢ Spark GraphX
+GraphX是Spark面向图计算提供的框架与算法库。
+
+# 2 quick start
+
+在大数据早期的课程中我们已经学习了MapReduce框架的原理及基本使用，并了解了其底层数据处理的实现方式。接下来，就让咱们走进Spark的世界，了解一下它是如何带领我们完成数据处理的。
+
+# 2.1 创建Maven项目
+
+### 2.1.1 增加Scala插件
+
+Spark由Scala语言开发的，所以本课件接下来的开发所使用的语言也为Scala，咱们当前使用的Spark版本为3.0.0，默认采用的Scala编译版本为2.12，所以后续开发时。我们依然采用这个版本。开发前请保证IDEA开发工具中含有Scala开发插件
+
+![image-20210822151051985](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822151051985.png)
+
+### 2.1.2 增加依赖关系
+
+修改Maven项目中的POM文件，增加Spark框架的依赖关系。本课件基于Spark3.0版本，使用时请注意对应版本。
+
+```xml
+<dependency>
+    <groupId>org.apache.spark</groupId>
+    <artifactId>spark-core_2.12</artifactId>
+    <version>${sparkversion}</version>
+</dependency>
+```
+
+### 2.1.3 WordCount
+
+- 实现一
 
 ```scala
 object Spark01_WordCount {
@@ -42,7 +140,7 @@ object Spark01_WordCount {
 }
 ```
 
-## 实现二
+- 实现二
 
 ```scala
 package com.atguigu.bigdata.spark.core.wc
@@ -93,7 +191,7 @@ object Spark02_WordCount1 {
 
 ```
 
-## 实现三
+- 实现三
 
 ```scala
 package com.atguigu.bigdata.spark.core.wc
@@ -216,7 +314,147 @@ object Spark03_WordCount {
 
 ```
 
-# Spark核心编程
+### 2.1.4 异常处理
+
+如果本机操作系统是Windows，在程序中使用了Hadoop相关的东西，比如写入文件到HDFS，则会遇到如下异常：
+
+![image-20210822151705633](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822151705633.png)
+
+出现这个问题的原因，并不是程序的错误，而是windows系统用到了hadoop相关的服务，解决办法是通过配置关联到windows的系统依赖就可以了
+
+![image-20210822152308374](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822152308374.png)
+
+![image-20210822152232703](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822152232703.png)
+
+# 3 Spark运行环境
+
+Spark作为一个数据处理框架和计算引擎，被设计在所有常见的集群环境中运行, 在国内工作中主流的环境为Yarn，不过逐渐容器式环境也慢慢流行起来。接下来，我们就分别看看不同环境下Spark的运行
+
+![image-20210822152542578](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822152542578.png)
+
+## 3.1 Local模式
+
+所谓的Local模式，就是不需要其他任何节点资源就可以在本地执行Spark代码的环境，一般用于教学，调试，演示等，之前在IDEA中运行代码的环境我们称之为开发环境，不太一样。
+
+## 3.2 Standalone模式
+
+local本地模式毕竟只是用来进行练习演示的，真实工作中还是要将应用提交到对应的集群中去执行，这里我们来看看只使用Spark自身节点运行的集群模式，也就是我们所谓的独立部署（Standalone）模式。Spark的Standalone模式体现了经典的master-slave模式。
+
+## 3.3 Yarn模式
+
+独立部署（Standalone）模式由Spark自身提供计算资源，无需其他框架提供资源。这种方式降低了和其他第三方资源框架的耦合性，独立性非常强。但是你也要记住，Spark主要是计算框架，而不是资源调度框架，所以本身提供的资源调度并不是它的强项，所以还是和其他专业的资源调度框架集成会更靠谱一些。所以接下来我们来学习在强大的Yarn环境下Spark是如何工作的（其实是因为在国内工作中，Yarn使用的非常多）。
+
+## 3.4 K8s&Mesos模式
+
+Mesos是Apache下的开源分布式资源管理框架，它被称为是分布式系统的内核,在Twitter得到广泛使用,管理着Twitter超过30,0000台服务器上的应用部署，但是在国内，依然使用着传统的Hadoop大数据框架，所以国内使用Mesos框架的并不多，但是原理其实都差不多，这里我们就不做过多讲解了。
+
+容器化部署是目前业界很流行的一项技术，基于Docker镜像运行能够让用户更加方便地对应用进行管理和运维。容器管理工具中最为流行的就是Kubernetes（k8s），而Spark也在最近的版本中支持了k8s部署模式。这里我们也不做过多的讲解。
+
+## 3.5 Windows模式
+
+在同学们自己学习时，每次都需要启动虚拟机，启动集群，这是一个比较繁琐的过程，并且会占大量的系统资源，导致系统执行变慢，不仅仅影响学习效果，也影响学习进度，Spark非常暖心地提供了可以在windows系统下启动本地集群的方式，这样，在不使用虚拟机的情况下，也能学习Spark的基本使用
+
+### 3.5.1 解压缩文件
+
+将文件spark-3.0.0-bin-hadoop3.2.tgz解压缩到无中文无空格的路径中
+
+执行解压缩文件路径下bin目录中的spark-shell.cmd文件，启动Spark本地环境
+
+# 4 Spark运行架构
+
+## 4.1 运行架构
+
+Spark框架的核心是一个计算引擎，整体来说，它采用了标准 master-slave 的结构。
+如下图所示，它展示了一个 Spark执行时的基本结构。图形中的Driver表示master，负责管理整个集群中的作业任务调度。图形中的Executor 则是 slave，负责实际执行任务。
+
+![image-20210822160114906](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822160114906.png)
+
+## 4.2 核心组件
+
+由上图可以看出，对于Spark框架有两个核心组件：
+
+### 4.2.1 Driver
+
+Spark驱动器节点，用于执行Spark任务中的main方法，负责实际代码的执行工作。Driver在Spark作业执行时主要负责：
+➢ 将用户程序转化为作业（job）
+➢ 在Executor之间调度任务(task)
+➢ 跟踪Executor的执行情况
+➢ 通过UI展示查询运行情况
+实际上，我们无法准确地描述Driver的定义，因为在整个的编程过程中没有看到任何有关Driver的字眼。所以简单理解，所谓的Driver就是驱使整个应用运行起来的程序，也称之为Driver类。
+
+### 4.2.2 Executor
+
+Spark Executor是集群中工作节点（Worker）中的一个JVM进程，负责在 Spark 作业中运行具体任务（Task），任务彼此之间相互独立。Spark 应用启动时，Executor节点被同时启动，并且始终伴随着整个 Spark 应用的生命周期而存在。如果有Executor节点发生了故障或崩溃，Spark 应用也可以继续执行，会将出错节点上的任务调度到其他Executor节点上继续运行。
+
+Executor有两个核心功能：
+
+➢ 负责运行组成Spark应用的任务，并将结果返回给驱动器进程
+➢ 它们通过自身的块管理器（Block Manager）为用户程序中要求缓存的 RDD 提供内存式存储。RDD 是直接缓存在Executor进程内的，因此任务可以在运行时充分利用缓存数据加速运算。
+
+### 4.2.3 Master & Worker
+
+Spark集群的独立部署环境中，不需要依赖其他的资源调度框架，自身就实现了资源调度的功能，所以环境中还有其他两个核心组件：Master和Worker，这里的Master是一个进程，主要负责资源的调度和分配，并进行集群的监控等职责，类似于Yarn环境中的RM, 而Worker呢，也是进程，一个Worker运行在集群中的一台服务器上，由Master分配资源对数据进行并行的处理和计算，类似于Yarn环境中NM。
+
+### 4.2.4 ApplicationMaster
+
+Hadoop用户向YARN集群提交应用程序时,提交程序中应该包含ApplicationMaster，用于向资源调度器申请执行任务的资源容器Container，运行用户自己的程序任务job，监控整个任务的执行，跟踪整个任务的状态，处理任务失败等异常情况。
+说的简单点就是，ResourceManager（资源）和Driver（计算）之间的解耦合靠的就是ApplicationMaster。
+
+## 4.3 核心概念
+
+### 4.3.1 Executor or Core
+
+Spark Executor是集群中运行在工作节点（Worker）中的一个JVM进程，是整个集群中的专门用于计算的节点。在提交应用中，可以提供参数指定计算节点的个数，以及对应的资源。这里的资源一般指的是工作节点Executor的内存大小和使用的虚拟CPU核（Core）数量。
+
+应用程序相关启动参数如下：
+
+![image-20210822161343317](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822161343317.png)
+
+### 4.3.2 并行度
+
+在分布式计算框架中一般都是多个任务同时执行，由于任务分布在不同的计算节点进行计算，所以能够真正地实现多任务并行执行，记住，这里是并行，而不是并发。这里我们将整个集群并行执行任务的数量称之为并行度。那么一个作业到底并行度是多少呢？这个取决于框架的默认配置。应用程序也可以在运行过程中动态修改。
+
+### 4.3.3 有向无环图
+
+![image-20210822161634605](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822161634605.png)
+
+大数据计算引擎框架我们根据使用方式的不同一般会分为四类，其中第一类就是Hadoop所承载的MapReduce,它将计算分为两个阶段，分别为 Map阶段 和 Reduce阶段。对于上层应用来说，就不得不想方设法去拆分算法，甚至于不得不在上层应用实现多个 Job 的串联，以完成一个完整的算法，例如迭代计算。 由于这样的弊端，催生了支持 DAG 框架的产生。因此，支持 DAG 的框架被划分为第二代计算引擎。如 Tez 以及更上层的 Oozie。这里我们不去细究各种 DAG 实现之间的区别，不过对于当时的 Tez 和 Oozie 来说，大多还是批处理的任务。接下来就是以 Spark 为代表的第三代的计算引擎。第三代计算引擎的特点主要是 Job 内部的 DAG 支持（不跨越 Job），以及实时计算。
+
+这里所谓的有向无环图，并不是真正意义的图形，而是由Spark程序直接映射成的数据流的高级抽象模型。简单理解就是将整个程序计算的执行过程用图形表示出来,这样更直观，更便于理解，可以用于表示程序的拓扑结构。
+
+DAG（Directed Acyclic Graph）有向无环图是由点和线组成的拓扑图形，该图形具有方向，不会闭环。
+
+## 4.4 提交流程
+
+所谓的提交流程，其实就是我们开发人员根据需求写的应用程序通过Spark客户端提交给Spark运行环境执行计算的流程。在不同的部署环境中，这个提交过程基本相同，但是又有细微的区别，我们这里不进行详细的比较，但是因为国内工作中，将Spark引用部署到Yarn环境中会更多一些，所以本课程中的提交流程是基于Yarn环境的。
+
+![image-20210822162104877](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822162104877.png)
+
+Spark应用程序提交到Yarn环境中执行的时候，一般会有两种部署执行的方式：Client和Cluster。两种模式主要区别在于：Driver程序的运行节点位置。
+
+### 4.2.1 Yarn Client 模式
+
+Client模式将用于监控和调度的Driver模块在客户端执行，而不是在Yarn中，所以一般用于测试。
+
+➢ Driver在任务提交的本地机器上运行
+➢ Driver启动后会和ResourceManager通讯申请启动ApplicationMaster
+➢ ResourceManager分配container，在合适的NodeManager上启动ApplicationMaster，负责向ResourceManager申请Executor内存
+➢ ResourceManager接到ApplicationMaster的资源申请后会分配container，然后ApplicationMaster在资源分配指定的NodeManager上启动Executor进程
+
+➢ Executor进程启动后会向Driver反向注册，Executor全部注册完成后Driver开始执行main函数
+➢ 之后执行到Action算子时，触发一个Job，并根据宽依赖开始划分stage，每个stage生成对应的TaskSet，之后将task分发到各个Executor上执行。
+
+### 4.2.2 Yarn Cluster 模式
+
+Cluster模式将用于监控和调度的Driver模块启动在Yarn集群资源中执行。一般应用于实际生产环境。 
+
+➢ 在YARN Cluster模式下，任务提交后会和ResourceManager通讯申请启动ApplicationMaster，
+➢ 随后ResourceManager分配container，在合适的NodeManager上启动ApplicationMaster，此时的ApplicationMaster就是Driver。
+➢ Driver启动后向ResourceManager申请Executor内存，ResourceManager接到ApplicationMaster的资源申请后会分配container，然后在合适的NodeManager上启动Executor进程
+➢ Executor进程启动后会向Driver反向注册，Executor全部注册完成后Driver开始执行main函数，
+➢ 之后执行到Action算子时，触发一个Job，并根据宽依赖开始划分stage，每个stage生成对应的TaskSet，之后将task分发到各个Executor上执行。
+
+# 5 Spark核心编程
 
 Spark计算框架为了能够进行高并发和高吞吐的数据处理，封装了三大数据结构，用于处理不同的应用场景。三大数据结构分别是：
 ➢ RDD : 弹性分布式数据集
@@ -556,6 +794,8 @@ RDD方法分为两类：
 
 ### 3.1 map
 
+将处理的数据逐条进行映射转换，这里的转换可以是类型的转换，也可以是值的转换。
+
 1. rdd的计算一个分区内的数据是一个一个执行逻辑
 
    只有前面一个数据全部的逻辑执行完毕后，才会执行下一个数据。
@@ -564,48 +804,606 @@ RDD方法分为两类：
 
 2. 不同分区数据计算是无序的。
 
+```scala
+package com.xupt.rdd.operator.transform.map
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * map 算子
+  *
+  */
+object Spark01_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4, 5))
+    val mapRdd: RDD[Int] = rdd.map(_ * 2)
+    mapRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.map
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * map 算子
+  *
+  */
+object Spark01_RDD_Operator_Transform_Par {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4, 5),2)
+    val mapRdd: RDD[Int] = rdd.map(num=>{
+      println(num + ">>>>>>>>>>>>")
+      num
+    })
+    val mapRdd2: RDD[Int] = mapRdd.map(num=>{
+      println(num + "==========")
+      num
+    })
+
+//    mapRdd2.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.map
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * map 算子
+  * 小功能：从服务器日志数据apache.log中获取用户请求URL资源路径
+  */
+object Spark01_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+    val logRdd: RDD[String] = sc.textFile("datas/apache.log")
+    val urlRdd: RDD[String] = logRdd.map(line => {
+      val splitRdd: Array[String] = line.split(" ")
+      splitRdd(6)
+    })
+    urlRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+
+
 ### 3.2 mapPartitions
+
+将待处理的数据以分区为单位发送到计算节点进行处理，这里的处理是指可以进行任意的处理，哪怕是过滤数据。
 
 mapPartitions : 可以以分区为单位进行数据转换操作
 
 - 但是会将整个分区的数据加载到内存进行引用
-
 - 如果处理完的数据是不会被释放掉，存在对象的引用。
-
 - 在内存较小，数据量较大的场合下，容易出现内存溢出。
+
+```scala
+package com.xupt.rdd.operator.transform.mappartitions
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * mapPartitions 算子
+  *
+  */
+object Spark02_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4, 5), 2)
+    // mapPartitions : 可以以分区为单位进行数据转换操作
+    //                 但是会将整个分区的数据加载到内存进行引用
+    //                 如果处理完的数据是不会被释放掉，存在对象的引用。
+    //                 在内存较小，数据量较大的场合下，容易出现内存溢出。
+    val mapRdd: RDD[Int] = rdd.mapPartitions(itera => {
+      println(">>>>>>>>>>>>>")
+      itera.map(_ * 2)
+    })
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.mappartitions
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  *  mapPartitions 算子
+  *  小功能：获取每个数据分区的最大值
+  */
+object Spark02_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4), 2)
+    val mapRdd: RDD[Int] = rdd.mapPartitions(itera => {
+      List(itera.max).iterator
+    })
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+思考一个问题：map和mapPartitions的区别？
+
+➢ 数据处理角度
+Map算子是分区内一个数据一个数据的执行，类似于串行操作。而mapPartitions算子是以分区为单位进行批处理操作。
+➢ 功能的角度
+Map算子主要目的将数据源中的数据进行转换和改变。但是不会减少或增多数据。MapPartitions算子需要传递一个迭代器，返回一个迭代器，没有要求的元素的个数保持不变，所以可以增加或减少数据
+
+➢ 性能的角度
+Map算子因为类似于串行操作，所以性能比较低，而是mapPartitions算子类似于批处理，所以性能较高。但是mapPartitions算子会长时间占用内存，那么这样会导致内存可能不够用，出现内存溢出的错误。所以在内存有限的情况下，不推荐使用。使用map操作。
 
 ### 3.3 mapPartitionsWithIndex
 
 将待处理的数据以分区为单位发送到计算节点进行处理，这里的处理是指可以进行任意的处理，哪怕是过滤数据，在处理时同时可以获取当前分区索引。
 
+```scala
+package com.xupt.rdd.operator.transform.mappartitionswithindex
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * mapPartitionsWithIndex 算子
+  * 小功能：获取第二个数据分区的数据
+  *
+  */
+object Spark03_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4), 2)
+    val mapRdd: RDD[Int] = rdd.mapPartitionsWithIndex((index, iterator) => {
+      if (index == 1) {
+        iterator
+      } else {
+        Nil.iterator
+      }
+    })
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.mappartitionswithindex
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * mapPartitionsWithIndex 算子
+  *
+  */
+object Spark03_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4), 2)
+    val mapRdd: RDD[(Int, Int)] = rdd.mapPartitionsWithIndex((index, iterator) => {
+      iterator.map(num => {
+        (index, num)
+      })
+    })
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
 ### 3.4 flatMap
 
 将处理的数据进行扁平化后再进行映射处理，所以算子也称之为扁平映射
 
+```scala
+package com.xupt.rdd.operator.transform.flatmap
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  *
+  */
+object Spark04_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[List[Int]] = sc.makeRDD(List(List(1, 2), List(3,4)))
+    val mapRdd: RDD[Int] = rdd.flatMap(list=>list)
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.flatmap
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * flatMap 算子
+  *
+  */
+object Spark04_RDD_Operator_Transform1 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[String] = sc.makeRDD(List("Hello Spark", "Hello world"))
+    val mapRdd: RDD[String] = rdd.flatMap(str=>str.split(" "))
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.flatmap
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * flatMap 算子
+  * 小功能：将List(List(1,2),3,List(4,5))进行扁平化操作
+  */
+object Spark04_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+
+    val rdd: RDD[Any] = sc.makeRDD(List(List(1,2),3,List(4,5)))
+    val mapRdd: RDD[Any] = rdd.flatMap(date => {
+      date match {
+        case list: List[_] => list
+        case num: Int => List(num)
+      }
+    })
+
+    mapRdd.collect().foreach(println)
+    sc.stop()
+  }
+}
+```
+
+
+
 ### 3.5 glom
 
 将同一个分区的数据直接转换为相同类型的内存数组进行处理，分区不变
+
+```scala
+package com.xupt.rdd.operator.transform.glom
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * glom 算子
+  *
+  */
+object Spark05_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1,2,3,4),2)
+    val arrRdd: RDD[Array[Int]] = rdd.glom()
+    arrRdd.collect().foreach(arr=> println(arr.mkString(",")))
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.glom
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * glom 算子
+  *
+  * 小功能：计算所有分区最大值求和（分区内取最大值，分区间最大值求和）
+  *
+  */
+object Spark05_RDD_Operator_Transform1 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1,2,3,4),2)
+    val arrRdd: RDD[Array[Int]] = rdd.glom()
+    println(arrRdd.map(arr => arr.max).sum())
+    sc.stop()
+  }
+}
+```
 
 ### 3.6 groupBy
 
 groupBy会将数据源中的每一个数据进行分组判断，根据返回的分组key进行分组
 相同的key值的数据会放置在一个组中
 
-将数据根据指定的规则进行分组, 分区默认不变，但是数据会被打乱重新组合，我们将这样的操作称之为shuffle。极限情况下，数据可能被分在同一个分区中
+将数据根据指定的规则进行分组, **分区默认不变**，但是数据会被打乱重新组合，我们将这样的操作称之为shuffle。极限情况下，数据可能被分在同一个分区中
 一个组的数据在一个分区中，但是并不是说一个分区中只有一个组
+
+```scala
+package com.xupt.rdd.operator.transform.groupby
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * groupBy 算子
+  *
+  */
+object Spark06_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1,2,3,4),2)
+
+    // groupBy会将数据源中的每一个数据进行分组判断，根据返回的分组key进行分组
+    // 相同的key值的数据会放置在一个组中
+    def groupFun(num: Int): Boolean = {
+      num % 2 == 0
+    }
+
+    val groupRdd: RDD[(Boolean, Iterable[Int])] = rdd.groupBy(groupFun)
+
+    groupRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.groupby
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * groupBy 算子
+  *
+  */
+object Spark06_RDD_Operator_Transform1 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[String] = sc.makeRDD(List("Hello","Spark","Hadoop","HDFS"),2)
+
+    val groupRdd: RDD[(Char, Iterable[String])] = rdd.groupBy(_.charAt(0))
+
+    groupRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.groupby
+
+import java.text.SimpleDateFormat
+import java.util.Date
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  * groupBy 算子
+  *
+  */
+object Spark06_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[String] = sc.textFile("datas/apache.log")
+
+    val mapRdd: RDD[(String, Int)] = rdd.map(line => {
+      val lineRdd: Array[String] = line.split(" ")
+      val time: String = lineRdd(3)
+      val dateFormat1: SimpleDateFormat = new SimpleDateFormat("dd/MM/yyyy:HH:mm:ss")
+      val date: Date = dateFormat1.parse(time)
+      val dateFormat2: SimpleDateFormat = new SimpleDateFormat("HH")
+      val houre: String = dateFormat2.format(date)
+      (houre, 1)
+    })
+    val groupRdd: RDD[(String, Iterable[(String, Int)])] = mapRdd.groupBy(_._1)
+
+    val resRdd: RDD[(String, Int)] = groupRdd.map {
+      case (hour, iter) => {
+        (hour, iter.size)
+      }
+    }
+    resRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
 
 ### 3.7 filter
 
 将数据根据指定的规则进行筛选过滤，符合规则的数据保留，不符合规则的数据丢弃。
 当数据进行筛选过滤后，分区不变，但是分区内的数据可能不均衡，生产环境下，可能会出现数据倾斜。
 
+```scala
+package com.xupt.rdd.operator.transform.filter
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  *         filter 算子
+  *
+  */
+object Spark07_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd: RDD[Int] = sc.makeRDD(List(1, 2, 3, 4), 2)
+
+    val filterRdd: RDD[Int] = rdd.filter(num => num % 2 != 0)
+
+    filterRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.filter
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *
+  *         filter 算子
+  *
+  */
+object Spark07_RDD_Operator_Transform_Test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+    val data: RDD[String] = sc.textFile("datas/apache.log")
+    val filterRdd: RDD[String] = data.filter(line => {
+      val splitRdd: Array[String] = line.split(" ")
+      splitRdd(3).startsWith("17/05/2015")
+    })
+
+    filterRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
+
 ### 3.8 sample
 
 根据指定的规则从数据集中抽取数据，可以用于 **处理数据倾斜**
 
+![image-20210822172028655](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822172028655.png)
+
  ### 3.9 distinct
 
 将数据集中重复的数据去重
+
+```scala
+package com.xupt.rdd.operator.transform.distinct
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *         distinct算子
+  */
+object Spark09_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val data: RDD[Int] = sc.makeRDD(List(1,2,3,4,1,2,3,4))
+    // 原理：
+    // map(x => (x, null)).reduceByKey((x, _) => x, numPartitions).map(_._1)
+
+    // (1, null),(2, null),(3, null),(4, null),(1, null),(2, null),(3, null),(4, null)
+    // (1, null)(1, null)(1, null)
+    // (null, null) => null
+    // (1, null) => 1
+
+    val distinctRdd: RDD[Int] = data.distinct()
+
+    distinctRdd.collect().foreach(println)
+
+    sc.stop()
+  }
+}
+```
 
 ### 3.10 coalesce
 
@@ -625,23 +1423,186 @@ spark提供了一个简化的操作：
 - 缩减分区：coalesce，如果想要数据均衡，可以采用shuffle
 - 扩大分区：repartition, 底层代码调用的就是coalesce，而且肯定采用shuffle
 
+```scala
+package com.xupt.rdd.operator.transform.coalesce
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *         distinct算子
+  */
+object Spark10_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(1, 2, 3, 4, 5, 6), 3)
+
+    // coalesce方法默认情况下不会将分区的数据打乱重新组合
+    // 这种情况下的缩减分区可能会导致数据不均衡，出现数据倾斜
+    // 如果想要让数据均衡，可以进行shuffle处理
+
+//    val coalesecRdd: RDD[Int] = rdd.coalesce(2)
+    val coalesecRdd: RDD[Int] = rdd.coalesce(2, true)
+
+    coalesecRdd.saveAsTextFile("output")
+
+    sc.stop()
+  }
+}
+```
+
 ### 3.11 repartition
 
 该操作内部其实执行的是coalesce操作，参数shuffle的默认值为true。
 
 无论是将分区数多的RDD转换为分区数少的RDD，还是将分区数少的RDD转换为分区数多的RDD，repartition操作都可以完成，因为无论如何都会经shuffle过程。
 
+```scala
+package com.xupt.rdd.operator.transform.repartition
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *         distinct算子
+  */
+object Spark11_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(1, 2, 3, 4, 5, 6), 2)
+
+    // coalesce算子可以扩大分区的，但是如果不进行shuffle操作，是没有意义，不起作用。
+    // 所以如果想要实现扩大分区的效果，需要使用shuffle操作
+    // spark提供了一个简化的操作
+    // 缩减分区：coalesce，如果想要数据均衡，可以采用shuffle
+    // 扩大分区：repartition, 底层代码调用的就是coalesce，而且肯定采用shuffle
+
+    //    val coalesecRdd: RDD[Int] = rdd.coalesce(3, true)
+    val resRdd: RDD[Int] = rdd.repartition(3)
+    resRdd.saveAsTextFile("output")
+
+    sc.stop()
+  }
+}
+```
+
 ### 3.12 sortBy
 
  sortBy方法可以根据指定的规则对数据源中的数据进行排序，默认为升序，第二个参数可以改变排序的方式。
  sortBy默认情况下，不会改变分区。但是中间存在shuffle操作。
 
+```scala
+package com.xupt.rdd.operator.transform.sortBy
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *         distinct算子
+  */
+object Spark12_RDD_Operator_Transform {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(1, 6, 2, 4, 3, 5), 2)
+
+    val sortRdd: RDD[Int] = rdd.sortBy(num => num)
+    sortRdd.saveAsTextFile("output")
+
+    sc.stop()
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.sortBy
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * @author Wnlife
+  *         distinct算子
+  */
+object Spark12_RDD_Operator_Transform1 {
+  def main(args: Array[String]): Unit = {
+    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("tranform")
+    val sc: SparkContext = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(("1", 1), ("11", 2), ("2", 3)), 2)
+    val resRdd: RDD[(String, Int)] = rdd.sortBy(t => t._1, false)
+
+    // sortBy方法可以根据指定的规则对数据源中的数据进行排序，默认为升序，第二个参数可以改变排序的方式
+    // sortBy默认情况下，不会改变分区。但是中间存在shuffle操作
+
+    resRdd.collect().mkString(",").foreach(println)
+    sc.stop()
+  }
+}
+```
+
+
+
 ### 3.13 双Value类型
 
-- intersection：交集
-- union：并集
-- subtract：差集
-- zip：拉链
+- intersection：交集 对源RDD和参数RDD求交集后返回一个新的RDD
+- union：并集 对源RDD和参数RDD求并集后返回一个新的RDD
+- subtract：差集 以一个RDD元素为主，去除两个RDD中重复元素，将其他元素保留下来。求差集
+- zip：拉链 将两个RDD中的元素，以键值对的形式进行合并。其中，键值对中的Key为第1个RDD中的元素，Value为第2个RDD中的相同位置的元素。
+
+```scala
+package com.xupt.rdd.operator.transform.towvalue
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark13_RDD_Operator_Transform {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+        val sc = new SparkContext(sparkConf)
+
+        // TODO 算子 - 双Value类型
+
+        // 交集，并集和差集要求两个数据源数据类型保持一致
+        // 拉链操作两个数据源的类型可以不一致
+
+        val rdd1 = sc.makeRDD(List(1,2,3,4))
+        val rdd2 = sc.makeRDD(List(3,4,5,6))
+        val rdd7 = sc.makeRDD(List("3","4","5","6"))
+
+        // 交集 : 【3，4】
+        val rdd3: RDD[Int] = rdd1.intersection(rdd2)
+        //val rdd8 = rdd1.intersection(rdd7)
+        println(rdd3.collect().mkString(","))
+
+        // 并集 : 【1，2，3，4，3，4，5，6】
+        val rdd4: RDD[Int] = rdd1.union(rdd2)
+        println(rdd4.collect().mkString(","))
+
+        // 差集 : 【1，2】
+        val rdd5: RDD[Int] = rdd1.subtract(rdd2)
+        println(rdd5.collect().mkString(","))
+
+        // 拉链 : 【1-3，2-4，3-5，4-6】
+        val rdd6: RDD[(Int, Int)] = rdd1.zip(rdd2)
+        val rdd8 = rdd1.zip(rdd7)
+        println(rdd6.collect().mkString(","))
+
+        sc.stop()
+
+    }
+}
+```
 
 交集，并集和差集要求两个数据源数据类型保持一致。
 拉链操作两个数据源的类型可以不一致。
@@ -660,7 +1621,35 @@ spark提供了一个简化的操作：
     Can only zip RDDs with same number of elements in each partition
     ```
 
+```scala
+package com.xupt.rdd.operator.transform.towvalue
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark13_RDD_Operator_Transform1 {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+        val sc = new SparkContext(sparkConf)
+
+        // TODO 算子 - 双Value类型
+        // Can't zip RDDs with unequal numbers of partitions: List(2, 4)
+        // 两个数据源要求分区数量要保持一致
+        // Can only zip RDDs with same number of elements in each partition
+        // 两个数据源要求分区中数据数量保持一致
+        val rdd1 = sc.makeRDD(List(1,2,3,4,5,6),2)
+        val rdd2 = sc.makeRDD(List(3,4,5,6),2)
+
+        val rdd6: RDD[(Int, Int)] = rdd1.zip(rdd2)
+        println(rdd6.collect().mkString(","))
+
+        sc.stop()
+
+    }
+}
+```
 
 ### 3.14 key-value 类型
 
@@ -677,6 +1666,33 @@ spark提供了一个简化的操作：
     - PythonPartitioner：privite的，无法从外部使用
 - 思考一个问题：如果想按照自己的方法进行数据分区怎么办？
 - 思考一个问题：哪那么多问题？
+
+```scala
+package com.xupt.rdd.operator.transform.keyvalue
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
+
+object Spark14_RDD_Operator_Transform_partitionBy {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+        val sc = new SparkContext(sparkConf)
+
+        val rdd = sc.makeRDD(List(("1", 1), ("11", 2), ("2", 3)),2)
+        // RDD => PairRDDFunctions
+        // 隐式转换（二次编译）
+
+        // partitionBy根据指定的分区规则对数据进行重分区
+
+        val resRdd: RDD[(String, Int)] = rdd.partitionBy(new HashPartitioner(2))
+        resRdd.saveAsTextFile("output")
+        sc.stop()
+
+    }
+}
+```
 
 #### 2 reduceByKey
 
@@ -714,6 +1730,37 @@ object Spark14_RDD_Operator_Transform_reduceByKey {
 - 元组中的第一个元素就是key
 - 元组中的第二个元素就是相同key的value的集合
 
+```scala
+package com.xupt.rdd.operator.transform.keyvalue
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark14_RDD_Operator_Transform_groupByKey {
+
+    def main(args: Array[String]): Unit = {
+
+        val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+        val sc = new SparkContext(sparkConf)
+
+        val rdd = sc.makeRDD(List(("a", 1), ("a", 2), ("a", 3),("b",3)),2)
+
+        // groupByKey : 将数据源中的数据，相同key的数据分在一个组中，形成一个对偶元组
+        //              元组中的第一个元素就是key，
+        //              元组中的第二个元素就是相同key的value的集合
+        val groupByKeyRdd: RDD[(String, Iterable[Int])] = rdd.groupByKey()
+
+        val groupByRdd: RDD[(String, Iterable[(String, Int)])] = rdd.groupBy(_._1)
+
+        groupByKeyRdd.collect().foreach(println)
+
+//        groupByRdd.collect().foreach(println)
+        sc.stop()
+
+    }
+}
+```
+
 **思考一个问题：reduceByKey和groupByKey的区别？**
 
 scala语言中一般的聚合操作都是两两聚合，spark基于scala开发的，所以它的聚合也是两两聚合。
@@ -742,6 +1789,87 @@ aggregateByKey存在函数柯里化，有两个参数列表
   - 第二个参数表示分区间计算规则
 
 aggregateByKey最终的返回数据结果应该和初始值的类型保持一致
+
+```scala
+package com.xupt.rdd.operator.transform.keyvalue
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark14_RDD_Operator_Transform_aggregateByKey {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    /**
+      * 分区内求最大值，分区间求和
+      */
+    val rdd = sc.makeRDD(List(("a", 1), ("a", 2), ("a", 3), ("a", 4)), 2)
+
+    // (a,【1,2】), (a, 【3，4】)
+    // (a, 2), (a, 4)
+    // (a, 6)
+
+    // aggregateByKey存在函数柯里化，有两个参数列表
+    // 第一个参数列表,需要传递一个参数，表示为初始值
+    //       主要用于当碰见第一个key的时候，和value进行分区内计算
+    // 第二个参数列表需要传递2个参数
+    //      第一个参数表示分区内计算规则
+    //      第二个参数表示分区间计算规则
+
+    val resRdd: RDD[(String, Int)] = rdd.aggregateByKey(0)(math.max, _ + _)
+
+    resRdd.collect().foreach(println)
+
+    sc.stop()
+
+  }
+}
+```
+
+```scala
+package com.xupt.rdd.operator.transform.keyvalue
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+
+object Spark14_RDD_Operator_Transform_aggregateByKey1 {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Operator")
+    val sc = new SparkContext(sparkConf)
+
+    val rdd = sc.makeRDD(List(
+      ("a", 1), ("a", 2), ("b", 3),
+      ("b", 4), ("b", 5), ("a", 6)
+    ),2)
+
+    // (a,【1,2】), (a, 【3，4】)
+    // (a, 2), (a, 4)
+    // (a, 6)
+
+    // aggregateByKey存在函数柯里化，有两个参数列表
+    // 第一个参数列表,需要传递一个参数，表示为初始值
+    //       主要用于当碰见第一个key的时候，和value进行分区内计算
+    // 第二个参数列表需要传递2个参数
+    //      第一个参数表示分区内计算规则
+    //      第二个参数表示分区间计算规则
+
+    val resRdd: RDD[(String, Int)] = rdd.aggregateByKey(0)(math.max, _ + _)
+    resRdd.collect().foreach(println)
+
+    // 分区内和分区间计算规则相同
+    val resRdd2: RDD[(String, Int)] = rdd.aggregateByKey(0)(_+_,_+_)
+    sc.stop()
+
+  }
+}
+```
+
+
 
 小练习：获取相同key的数据的平均值 => (a, 3),(b, 4)
 
@@ -1117,6 +2245,8 @@ object Spark3_RDD_Operator_Transform_aggregate {
 
  ### 3 folder
 
+aggregate的简化版操作
+
 ```scala
 object Spark4_RDD_Operator_Transform_folder {
 
@@ -1135,6 +2265,8 @@ object Spark4_RDD_Operator_Transform_folder {
 ```
 
 ### 4 countByKey
+
+统计每种key的个数
 
 ```scala
 object Spark5_RDD_Operator_Transform_countbykey {
@@ -1161,6 +2293,8 @@ object Spark5_RDD_Operator_Transform_countbykey {
 ### 5 save
 
 将数据保存到不同格式的文件中
+
+![image-20210822174559791](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210822174559791.png)
 
 ```scala
 object Spark5_RDD_Operator_Transform_save {
@@ -1374,7 +2508,7 @@ object Spark02_RDD_Seria {
 
 RDD只支持粗粒度转换，即在大量记录上执行的单个操作。将创建RDD的一系列Lineage（血统）记录下来，以便恢复丢失的分区。RDD的Lineage会记录RDD的元数据信息和转换行为，当该RDD的部分分区数据丢失时，它可以根据这些信息来**重新运算**和恢复丢失的数据分区。
 
-
+ss
 
 ![image-20210711215823218](https://gitee.com/wnboy/pic_bed/raw/master/img/image-20210711215823218.png)
 
@@ -1599,7 +2733,7 @@ object Spark03_RDD_Persist {
 
 由于血缘依赖 过长会造成容错本高，这样就不如在中间阶段做检查点容错，如果检测点之后节点出现问题，可以从检测点做血缘，减少了开销。
 
-对RDD做checkpoint操作不会马上执行，必须ActionAction ActionAction 操作才能触发。
+对RDD做checkpoint操作不会马上执行，必须ActionAction  操作才能触发。
 
 ```scala
 import org.apache.spark.rdd.RDD
