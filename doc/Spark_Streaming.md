@@ -401,6 +401,8 @@ DStream 上的操作与 RDD 的类似，分为Transformations（转换）和Outp
 
 ### 4.1.1 Transform
 
+Transform允许DStream上执行任意的RDD-to-RDD函数。即使这些函数并没有在DStream的API中暴露出来，通过该函数可以方便的扩展Spark API。该函数每一批次调度一次。其实也就是对DStream中的RDD应用转换。
+
 ```scala
 package com.xupt.streaming
 
